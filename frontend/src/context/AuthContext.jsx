@@ -1,108 +1,144 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { loginRequest, signupRequest, fetchCurrentUser, fetchCurrentAdmin, logoutClient } from '../api/authApi';
+import { fetchCart } from '../api/cartApi';
+import { getStoredToken, getStoredRole, setStoredRole } from '../api/http';
 
 const AuthContext = createContext();
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    // Return default values if context doesn't exist (for now)
-    return {
-      user: null,
-      isAuthenticated: false,
-      isAdmin: false,
-      loading: false,
-      login: async () => {},
-      register: async () => {},
-      logout: () => {},
-    };
+    throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
 };
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  const [admin, setAdmin] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [cartCount, setCartCount] = useState(0);
 
-  useEffect(() => {
-    // Check for stored user data
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      try {
-        const userData = JSON.parse(storedUser);
-        setUser(userData);
-        setIsAdmin(userData.is_admin || userData.is_staff || userData.is_superuser || false);
-      } catch (error) {
-        console.error('Error parsing user data:', error);
-        localStorage.removeItem('user');
-      }
+  const refreshCart = useCallback(async () => {
+    if (!getStoredToken() || getStoredRole() === 'admin') {
+      setCartCount(0);
+      return;
     }
-    setLoading(false);
+    try {
+      const cart = await fetchCart();
+      const n = cart.items.reduce((sum, line) => sum + line.quantity, 0);
+      setCartCount(n);
+    } catch {
+      setCartCount(0);
+    }
   }, []);
 
-  const login = async (username, password, isAdminLogin = false) => {
-    // TODO: Replace with actual API call
-    // For now, just set a dummy user
-    const dummyUser = {
-      id: 1,
-      username: username,
-      email: `${username}@example.com`,
-      is_admin: isAdminLogin,
-      is_staff: isAdminLogin,
-    };
+  const hydrateFromToken = useCallback(async () => {
+    const role = getStoredRole();
+    if (role === 'admin') {
+      const me = await fetchCurrentAdmin();
+      setAdmin(me);
+      setUser(null);
+      return;
+    }
+    if (role === 'user') {
+      const me = await fetchCurrentUser();
+      setUser(me);
+      setAdmin(null);
+      await refreshCart();
+      return;
+    }
     
-    localStorage.setItem('user', JSON.stringify(dummyUser));
-    setUser(dummyUser);
-    setIsAdmin(isAdminLogin);
-    
-    return {
-      user: dummyUser,
-      tokens: {
-        access: 'dummy-token',
-        refresh: 'dummy-refresh',
-      },
-    };
-  };
+    // No role stored, try user then admin
+    try {
+      const me = await fetchCurrentUser();
+      setUser(me);
+      setAdmin(null);
+      setStoredRole('user');
+      await refreshCart();
+    } catch {
+      const me = await fetchCurrentAdmin();
+      setAdmin(me);
+      setUser(null);
+      setStoredRole('admin');
+    }
+  }, [refreshCart]);
 
-  const register = async (userData) => {
-    // TODO: Replace with actual API call
-    const dummyUser = {
-      id: Date.now(),
-      username: userData.username,
-      email: userData.email,
-      is_admin: false,
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!getStoredToken()) {
+        setUser(null);
+        setAdmin(null);
+        setLoading(false);
+        return;
+      }
+      try {
+        await hydrateFromToken();
+      } catch (error) {
+        console.error('Session hydration failed:', error);
+        logoutClient();
+        if (!cancelled) {
+          setUser(null);
+          setAdmin(null);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
     };
-    
-    localStorage.setItem('user', JSON.stringify(dummyUser));
-    setUser(dummyUser);
-    setIsAdmin(false);
-    
-    return {
-      user: dummyUser,
-      tokens: {
-        access: 'dummy-token',
-        refresh: 'dummy-refresh',
-      },
-    };
-  };
+  }, [hydrateFromToken]);
 
-  const logout = () => {
-    localStorage.removeItem('user');
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
+  const login = useCallback(async (email, password) => {
+    const data = await loginRequest(email, password);
+    if (data.role === 'admin') {
+      const me = await fetchCurrentAdmin();
+      setAdmin(me);
+      setUser(null);
+      setCartCount(0);
+      return 'admin';
+    }
+    const me = await fetchCurrentUser();
+    setUser(me);
+    setAdmin(null);
+    await refreshCart();
+    return 'user';
+  }, [refreshCart]);
+
+  const register = useCallback(async (userData) => {
+    const { email, password, name } = userData;
+    await signupRequest(email, password, name || null);
+    await loginRequest(email, password);
+    const me = await fetchCurrentUser();
+    setUser(me);
+    setAdmin(null);
+    await refreshCart();
+  }, [refreshCart]);
+
+  const logout = useCallback(() => {
+    logoutClient();
     setUser(null);
-    setIsAdmin(false);
-  };
+    setAdmin(null);
+    setCartCount(0);
+  }, []);
 
-  const value = {
-    user,
+  const isAdmin = useMemo(() => !!admin, [admin]);
+  const isAuthenticated = useMemo(() => !!(user || admin), [user, admin]);
+
+  const value = useMemo(() => ({
+    user: user || admin,
+    admin,
     isAdmin,
     loading,
+    cartCount,
     login,
     register,
     logout,
-    isAuthenticated: !!user,
-  };
+    refreshCart,
+    isAuthenticated,
+  }), [user, admin, isAdmin, loading, cartCount, login, register, logout, refreshCart, isAuthenticated]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
