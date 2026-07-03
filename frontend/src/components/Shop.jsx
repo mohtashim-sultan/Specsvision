@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Search } from 'lucide-react';
+import { Search, SlidersHorizontal } from 'lucide-react';
 import ProductCard from './ProductCard';
 import SearchBar from './shop/Searchbar';
 import FilterDropdown from './shop/FilterDropdown';
@@ -14,6 +14,7 @@ export default function Shop() {
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Filter states
   const [selectedCategories, setSelectedCategories] = useState([]);
@@ -32,13 +33,11 @@ export default function Shop() {
     { value: 'Rectangle', label: 'Rectangle' },
     { value: 'Oval', label: 'Oval' },
   ];
-
   const brands = [
     { value: 'SpecsVision', label: 'SpecsVision' },
     { value: 'Ray-Ban', label: 'Ray-Ban' },
     { value: 'Oakley', label: 'Oakley' },
   ];
-
   const styles = [
     { value: 'Classic', label: 'Classic' },
     { value: 'Sporty', label: 'Sporty' },
@@ -46,21 +45,18 @@ export default function Shop() {
     { value: 'Modern', label: 'Modern' },
     { value: 'Retro', label: 'Retro' },
   ];
-
   const priceRanges = [
     { value: 'under-50', label: 'Under $50' },
     { value: '50-80', label: '$50 to $80' },
     { value: '80-100', label: '$80 to $100' },
     { value: 'over-100', label: 'Over $100' },
   ];
-
   const badges = [
     { value: 'Best Seller', label: 'Best Seller' },
     { value: 'New', label: 'New' },
     { value: 'Trending', label: 'Trending' },
     { value: 'Sale', label: 'Sale' },
   ];
-
   const faceShapes = [
     { value: 'Oval', label: 'Oval' },
     { value: 'Square', label: 'Square' },
@@ -68,7 +64,8 @@ export default function Shop() {
     { value: 'Heart', label: 'Heart' },
   ];
 
-  // Fetch products from backend on mount
+  const activeFilterCount = selectedCategories.length + selectedBadges.length + selectedFaceShapes.length + selectedBrands.length + selectedStyles.length + selectedPriceRanges.length;
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -85,17 +82,13 @@ export default function Shop() {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
-  // Filter and search logic
   useEffect(() => {
     setLoading(true);
     let filtered = [...products];
 
-    // Search filter
     if (searchQuery) {
       filtered = filtered.filter(
         (p) =>
@@ -103,34 +96,22 @@ export default function Shop() {
           (p.description && p.description.toLowerCase().includes(searchQuery.toLowerCase()))
       );
     }
-
-    // Category filter
     if (selectedCategories.length > 0) {
-      const categoryValues = selectedCategories.map((c) => c.value);
-      filtered = filtered.filter((p) => p.category && categoryValues.includes(p.category));
+      const vals = selectedCategories.map((c) => c.value);
+      filtered = filtered.filter((p) => p.category && vals.includes(p.category));
     }
-
-    // Brand filter
     if (selectedBrands.length > 0) {
-      const brandValues = selectedBrands.map((b) => b.value);
-      filtered = filtered.filter((p) => brandValues.includes(p.brand));
+      const vals = selectedBrands.map((b) => b.value);
+      filtered = filtered.filter((p) => vals.includes(p.brand));
     }
-
-    // Style filter
     if (selectedStyles.length > 0) {
-      const styleValues = selectedStyles.map((s) => s.value);
-      filtered = filtered.filter((p) => styleValues.includes(p.style));
+      const vals = selectedStyles.map((s) => s.value);
+      filtered = filtered.filter((p) => vals.includes(p.style));
     }
-
-    // Face shape filter
     if (selectedFaceShapes.length > 0) {
-      const shapeValues = selectedFaceShapes.map((s) => s.value);
-      filtered = filtered.filter((p) =>
-        p.faceShapes?.some((shape) => shapeValues.includes(shape))
-      );
+      const vals = selectedFaceShapes.map((s) => s.value);
+      filtered = filtered.filter((p) => p.faceShapes?.some((shape) => vals.includes(shape)));
     }
-
-    // Price Range filter
     if (selectedPriceRanges.length > 0) {
       const rangeValues = selectedPriceRanges.map((r) => r.value);
       filtered = filtered.filter((p) => {
@@ -144,93 +125,90 @@ export default function Shop() {
         });
       });
     }
-
-    // Badge filter
     if (selectedBadges.length > 0) {
-      const badgeValues = selectedBadges.map((b) => b.value);
-      filtered = filtered.filter((p) => badgeValues.includes(p.badge));
+      const vals = selectedBadges.map((b) => b.value);
+      filtered = filtered.filter((p) => vals.includes(p.badge));
     }
 
     const timer = setTimeout(() => {
       setFilteredProducts(filtered);
       setLoading(false);
     }, 200);
-
     return () => clearTimeout(timer);
-  }, [
-    searchQuery,
-    selectedCategories,
-    selectedBrands,
-    selectedStyles,
-    selectedFaceShapes,
-    selectedPriceRanges,
-    selectedBadges,
-    products
-  ]);
+  }, [searchQuery, selectedCategories, selectedBrands, selectedStyles, selectedFaceShapes, selectedPriceRanges, selectedBadges, products]);
 
-  const handleSearch = (query) => {
-    setSearchQuery(query);
-  };
+  const handleSearch = (query) => setSearchQuery(query);
 
   return (
-    <main className="py-6 sm:py-8 md:py-12 lg:py-16 bg-gradient-to-br from-purple-50 to-pink-50 min-h-[60vh]">
+    <main className="py-6 sm:py-8 md:py-12 lg:py-16 min-h-[60vh]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="text-center mb-6 sm:mb-8 md:mb-12">
-          <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-2">Shop</h2>
-          <p className="text-gray-600 text-sm sm:text-base">Discover our complete collection</p>
-        </div>
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8 sm:mb-10"
+        >
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-3 mb-6">
+            <div>
+              <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
+                Shop
+              </h1>
+              <p className="text-sm sm:text-base" style={{ color: 'var(--text-secondary)' }}>
+                Discover our complete collection
+              </p>
+            </div>
+            {!loading && (
+              <span className="text-xs font-medium px-3 py-1.5 rounded-full" style={{ backgroundColor: 'var(--surface-bg-secondary)', color: 'var(--text-muted)' }}>
+                {filteredProducts.length} product{filteredProducts.length !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
 
-        {/* Search Bar */}
-        <div className="mb-4 sm:mb-6">
-          <SearchBar onSearch={handleSearch} />
-        </div>
+          {/* Search + Filter toggle */}
+          <div className="flex gap-3">
+            <SearchBar onSearch={handleSearch} className="flex-1" />
+            <button
+              onClick={() => setFiltersOpen(!filtersOpen)}
+              className="flex items-center gap-2 px-4 py-3 rounded-xl font-medium text-sm transition-all min-h-[44px] relative"
+              style={{
+                backgroundColor: filtersOpen ? 'rgba(147,51,234,0.08)' : 'var(--surface-bg)',
+                border: `2px solid ${filtersOpen ? 'var(--text-accent)' : 'var(--border-color)'}`,
+                color: filtersOpen ? 'var(--text-accent)' : 'var(--text-secondary)',
+              }}
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              <span className="hidden sm:inline">Filters</span>
+              {activeFilterCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-[10px] rounded-full flex items-center justify-center font-bold">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+          </div>
+        </motion.div>
 
-        {/* Filters Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 mb-6 sm:mb-8">
-          <FilterDropdown
-            label="Category"
-            options={categories}
-            selected={selectedCategories}
-            onChange={setSelectedCategories}
-            multiple={true}
-          />
-          <FilterDropdown
-            label="Brand"
-            options={brands}
-            selected={selectedBrands}
-            onChange={setSelectedBrands}
-            multiple={true}
-          />
-          <FilterDropdown
-            label="Style"
-            options={styles}
-            selected={selectedStyles}
-            onChange={setSelectedStyles}
-            multiple={true}
-          />
-          <FilterDropdown
-            label="Face Shape"
-            options={faceShapes}
-            selected={selectedFaceShapes}
-            onChange={setSelectedFaceShapes}
-            multiple={true}
-          />
-          <FilterDropdown
-            label="Price"
-            options={priceRanges}
-            selected={selectedPriceRanges}
-            onChange={setSelectedPriceRanges}
-            multiple={true}
-          />
-          <FilterDropdown
-            label="Badge"
-            options={badges}
-            selected={selectedBadges}
-            onChange={setSelectedBadges}
-            multiple={true}
-          />
-        </div>
+        {/* Filters Panel */}
+        {filtersOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="rounded-2xl p-4 sm:p-5 mb-6 shadow-sm overflow-hidden"
+            style={{
+              backgroundColor: 'var(--surface-bg)',
+              border: '1px solid var(--border-color)',
+            }}
+          >
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+              <FilterDropdown label="Category" options={categories} selected={selectedCategories} onChange={setSelectedCategories} />
+              <FilterDropdown label="Brand" options={brands} selected={selectedBrands} onChange={setSelectedBrands} />
+              <FilterDropdown label="Style" options={styles} selected={selectedStyles} onChange={setSelectedStyles} />
+              <FilterDropdown label="Face Shape" options={faceShapes} selected={selectedFaceShapes} onChange={setSelectedFaceShapes} />
+              <FilterDropdown label="Price" options={priceRanges} selected={selectedPriceRanges} onChange={setSelectedPriceRanges} />
+              <FilterDropdown label="Badge" options={badges} selected={selectedBadges} onChange={setSelectedBadges} />
+            </div>
+          </motion.div>
+        )}
 
         {/* Products Grid */}
         {loading ? (
@@ -238,7 +216,7 @@ export default function Shop() {
             <LoadingSpinner size="lg" />
           </div>
         ) : filteredProducts.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 md:gap-6">
             {filteredProducts.map((p, index) => (
               <motion.div
                 key={p.id}

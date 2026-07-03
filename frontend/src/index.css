@@ -282,6 +282,26 @@
   background: #020617 !important;
 }
 
+/* ── Login / Signup dark mode overrides ── */
+.dark .bg-gray-50\/50 {
+  background-color: rgba(30, 41, 59, 0.5) !important;
+}
+.dark .focus\:bg-white:focus {
+  background-color: var(--surface-bg) !important;
+}
+.dark .focus\:ring-purple-100:focus {
+  --tw-ring-color: rgba(168, 85, 247, 0.2) !important;
+}
+.dark .hover\:bg-purple-50\/50:hover {
+  background-color: rgba(168, 85, 247, 0.1) !important;
+}
+.dark .hover\:shadow-purple-500\/25:hover {
+  --tw-shadow-color: rgba(168, 85, 247, 0.15) !important;
+}
+.dark .border-purple-100\/50 {
+  border-color: rgba(51, 65, 85, 0.6) !important;
+}
+
 /* ===== Try-On Studio Theme ===== */
 
 /* Light mode: convert dark try-on classes → light colors */

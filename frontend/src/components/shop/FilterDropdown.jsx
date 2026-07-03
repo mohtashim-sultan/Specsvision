@@ -4,7 +4,7 @@ import Dropdown from '../common/Dropdown';
 export default function FilterDropdown({ label, options, selected, onChange, multiple = true }) {
   return (
     <div className="w-full">
-      <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
+      <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>{label}</label>
       <Dropdown
         options={options}
         selected={selected}
