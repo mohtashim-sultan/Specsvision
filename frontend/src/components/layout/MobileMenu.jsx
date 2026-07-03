@@ -1,11 +1,12 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { X, Home, ShoppingBag, Eye, Info, Mail, User, LogOut, ShoppingCart } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 
 export default function MobileMenu({ isOpen, onClose }) {
   const { isAuthenticated, user, logout } = useAuth();
+  const location = useLocation();
 
   const menuItems = [
     { path: '/', label: 'Home', icon: Home },
@@ -15,9 +16,7 @@ export default function MobileMenu({ isOpen, onClose }) {
     { path: '/contact', label: 'Contact', icon: Mail },
   ];
 
-  const handleLinkClick = () => {
-    onClose();
-  };
+  const handleLinkClick = () => onClose();
 
   const handleLogout = () => {
     logout();
@@ -34,7 +33,8 @@ export default function MobileMenu({ isOpen, onClose }) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 bg-black/50 z-40"
+            className="fixed inset-0 z-40"
+            style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
           />
 
           {/* Menu */}
@@ -43,26 +43,28 @@ export default function MobileMenu({ isOpen, onClose }) {
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md rounded-t-3xl shadow-2xl z-[60] max-h-[90vh] overflow-y-auto overscroll-contain"
+            className="fixed bottom-0 left-0 right-0 rounded-t-3xl shadow-2xl z-[60] max-h-[90vh] overflow-y-auto overscroll-contain"
+            style={{ backgroundColor: 'var(--surface-bg)' }}
           >
             {/* Handle bar */}
             <div className="flex justify-center pt-3 pb-2">
-              <div className="w-12 h-1 bg-gray-300 rounded-full" />
+              <div className="w-12 h-1 rounded-full" style={{ backgroundColor: 'var(--border-color-gray)' }} />
             </div>
 
             {/* Close button */}
             <button
               onClick={onClose}
-              className="absolute top-4 right-4 p-2 text-gray-600 hover:text-gray-900 active:text-gray-700 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center touch-manipulation"
+              className="absolute top-4 right-4 p-2 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center touch-manipulation rounded-lg"
+              style={{ color: 'var(--text-secondary)' }}
               aria-label="Close menu"
             >
               <X className="w-6 h-6" />
             </button>
 
             {/* Logo */}
-            <div className="px-6 pt-4 pb-6 border-b border-purple-100">
+            <div className="px-6 pt-4 pb-6 border-b" style={{ borderColor: 'var(--border-color)' }}>
               <div className="flex items-center gap-2">
-                <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-2 rounded-lg">
+                <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-2 rounded-xl shadow-md shadow-purple-500/20">
                   <Eye className="w-6 h-6 text-white" />
                 </div>
                 <span className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
@@ -72,47 +74,62 @@ export default function MobileMenu({ isOpen, onClose }) {
             </div>
 
             {/* Navigation Links */}
-            <nav className="px-6 py-4">
-              {menuItems.map((item) => {
+            <nav className="px-4 py-4">
+              {menuItems.map((item, i) => {
                 const Icon = item.icon;
+                const isActive = item.path === '/' ? location.pathname === '/' : location.pathname.startsWith(item.path);
                 return (
-                  <Link
+                  <motion.div
                     key={item.path}
-                    to={item.path}
-                    onClick={handleLinkClick}
-                    className="flex items-center gap-4 px-4 py-3 rounded-xl hover:bg-purple-50 active:bg-purple-100 transition-colors mb-2 min-h-[48px] touch-manipulation"
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.05 }}
                   >
-                    <Icon className="w-5 h-5 text-purple-600 flex-shrink-0" />
-                    <span className="text-gray-900 font-medium">{item.label}</span>
-                  </Link>
+                    <Link
+                      to={item.path}
+                      onClick={handleLinkClick}
+                      className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all mb-1 min-h-[48px] touch-manipulation"
+                      style={{
+                        backgroundColor: isActive ? 'rgba(147,51,234,0.08)' : 'transparent',
+                        color: isActive ? 'var(--text-accent)' : 'var(--text-primary)',
+                      }}
+                    >
+                      <Icon className="w-5 h-5 flex-shrink-0" style={{ color: 'var(--text-accent)' }} />
+                      <span className="font-medium">{item.label}</span>
+                      {isActive && (
+                        <span className="ml-auto w-1.5 h-1.5 rounded-full bg-gradient-to-r from-purple-600 to-pink-600" />
+                      )}
+                    </Link>
+                  </motion.div>
                 );
               })}
             </nav>
 
             {/* User Section */}
-            <div className="px-6 py-4 border-t border-purple-100">
+            <div className="px-6 py-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
               {isAuthenticated ? (
                 <>
-                  <div className="flex items-center gap-3 px-4 py-3 mb-2">
-                    <div className="w-10 h-10 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full flex items-center justify-center">
+                  <div className="flex items-center gap-3 px-4 py-3 mb-3">
+                    <div className="w-10 h-10 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl flex items-center justify-center shadow-md shadow-purple-500/20">
                       <User className="w-5 h-5 text-white" />
                     </div>
-                    <div className="flex-1">
-                      <p className="font-semibold text-gray-900">{user?.username || 'User'}</p>
-                      <p className="text-sm text-gray-600">{user?.email}</p>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{user?.full_name || user?.username || 'User'}</p>
+                      <p className="text-sm truncate" style={{ color: 'var(--text-muted)' }}>{user?.email}</p>
                     </div>
                   </div>
                   <Link
                     to="/cart"
                     onClick={handleLinkClick}
-                    className="flex items-center gap-4 px-4 py-3 rounded-xl hover:bg-purple-50 transition-colors mb-2"
+                    className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all mb-1"
+                    style={{ color: 'var(--text-primary)' }}
                   >
-                    <ShoppingCart className="w-5 h-5 text-purple-600" />
-                    <span className="text-gray-900 font-medium">Cart</span>
+                    <ShoppingCart className="w-5 h-5" style={{ color: 'var(--text-accent)' }} />
+                    <span className="font-medium">Cart</span>
                   </Link>
                   <button
                     onClick={handleLogout}
-                    className="w-full flex items-center gap-4 px-4 py-3 rounded-xl hover:bg-red-50 transition-colors text-red-600"
+                    className="w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-colors text-red-500"
                   >
                     <LogOut className="w-5 h-5" />
                     <span className="font-medium">Logout</span>
@@ -123,14 +140,15 @@ export default function MobileMenu({ isOpen, onClose }) {
                   <Link
                     to="/login"
                     onClick={handleLinkClick}
-                    className="block w-full px-4 py-3 bg-white border-2 border-purple-200 text-purple-600 rounded-xl font-semibold text-center hover:bg-purple-50 transition-colors"
+                    className="block w-full px-4 py-3 rounded-xl font-semibold text-center border-2 transition-all"
+                    style={{ borderColor: 'var(--border-color)', color: 'var(--text-accent)' }}
                   >
                     Login
                   </Link>
                   <Link
                     to="/signup"
                     onClick={handleLinkClick}
-                    className="block w-full px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl font-semibold text-center hover:shadow-lg transition-all"
+                    className="block w-full px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl font-semibold text-center shadow-lg shadow-purple-500/25 transition-all"
                   >
                     Sign Up
                   </Link>
