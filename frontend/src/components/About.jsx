@@ -10,6 +10,7 @@ import {
   Clock3,
   CheckCircle2,
 } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 const teamMembers = [
   {
@@ -36,18 +37,9 @@ const teamMembers = [
 ];
 
 const milestones = [
-  {
-    title: '1M+ Try-Ons',
-    description: 'Done online by users across our platform.',
-  },
-  {
-    title: '95% Fit Accuracy',
-    description: 'Industry-leading facial fit predictions.',
-  },
-  {
-    title: 'Global Shipping',
-    description: 'Ships to 40+ countries with live tracking.',
-  },
+  { title: '1M+ Try-Ons', description: 'Done online by users across our platform.' },
+  { title: '95% Fit Accuracy', description: 'Industry-leading facial fit predictions.' },
+  { title: 'Global Shipping', description: 'Ships to 40+ countries with live tracking.' },
 ];
 
 const featuredFrames = ['Oval Classic', 'Aviator Lite', 'Willow Round', 'Vector Slim'];
@@ -58,168 +50,166 @@ export default function About() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid lg:grid-cols-12 gap-6 lg:gap-7 items-start">
           <section className="lg:col-span-7 space-y-5">
-            <article className="rounded-2xl border border-purple-100 bg-white/90 p-5 sm:p-7 shadow-sm">
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">About SpecsVision</h1>
-              <p className="mt-3 text-sm sm:text-base text-gray-600 leading-relaxed">
+            {/* About Card */}
+            <motion.article
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-2xl p-5 sm:p-7 shadow-sm"
+              style={{ backgroundColor: 'var(--surface-bg)', border: '1px solid var(--border-color)' }}
+            >
+              <h1 className="text-2xl sm:text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>About SpecsVision</h1>
+              <p className="mt-3 text-sm sm:text-base leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
                 At SpecsVision we blend optical craftsmanship with cutting-edge AI to create the
                 most realistic virtual try-on experience for eyewear. Our mission is to make
                 choosing glasses effortless by showing you how every look fits in real time, powered
                 by machine learning and optical precision.
               </p>
               <div className="mt-5 grid sm:grid-cols-2 gap-3">
-                <div className="rounded-xl border border-purple-100 bg-purple-50/60 px-4 py-3">
-                  <p className="text-xs uppercase tracking-wide text-purple-700 font-semibold">
-                    Founded
-                  </p>
-                  <p className="text-sm text-gray-700 mt-1">2018 · San Francisco, CA</p>
+                <div className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(147,51,234,0.06)', border: '1px solid var(--border-color)' }}>
+                  <p className="text-xs uppercase tracking-wide font-semibold" style={{ color: 'var(--text-accent)' }}>Founded</p>
+                  <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>2018 · San Francisco, CA</p>
                 </div>
-                <div className="rounded-xl border border-pink-100 bg-pink-50/60 px-4 py-3">
-                  <p className="text-xs uppercase tracking-wide text-pink-700 font-semibold">
-                    Fit-Driven Vision
-                  </p>
-                  <p className="text-sm text-gray-700 mt-1">
-                    Free 7-day home trials on select frames
-                  </p>
+                <div className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(236,72,153,0.06)', border: '1px solid var(--border-color)' }}>
+                  <p className="text-xs uppercase tracking-wide font-semibold" style={{ color: 'var(--text-accent)' }}>Fit-Driven Vision</p>
+                  <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>Free 7-day home trials on select frames</p>
                 </div>
               </div>
-            </article>
+            </motion.article>
 
+            {/* Team */}
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-              {teamMembers.map((member) => (
-                <article
+              {teamMembers.map((member, i) => (
+                <motion.article
                   key={member.name}
-                  className="rounded-2xl border border-purple-100 bg-white p-4 shadow-sm min-h-[172px] flex flex-col text-center"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 + i * 0.1 }}
+                  className="rounded-2xl p-4 shadow-sm min-h-[172px] flex flex-col text-center"
+                  style={{ backgroundColor: 'var(--surface-bg)', border: '1px solid var(--border-color)' }}
                 >
                   <img
                     src={member.image}
                     alt={member.name}
-                    className="w-16 h-16 rounded-full object-cover border-2 border-purple-100 mx-auto"
+                    className="w-16 h-16 rounded-full object-cover mx-auto"
+                    style={{ border: '2px solid var(--border-color)' }}
                   />
-                  <h2 className="mt-3 text-sm font-semibold text-gray-900">{member.name}</h2>
-                  <p className="text-xs text-purple-700 mt-1">{member.role}</p>
-                  <p className="text-xs text-gray-500 mt-1">{member.focus}</p>
-                </article>
+                  <h2 className="mt-3 text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{member.name}</h2>
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-accent)' }}>{member.role}</p>
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{member.focus}</p>
+                </motion.article>
               ))}
             </div>
 
-            <article className="rounded-2xl border border-purple-100 bg-white p-4 sm:p-5 shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900">Milestones</h2>
+            {/* Milestones */}
+            <motion.article
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="rounded-2xl p-4 sm:p-5 shadow-sm"
+              style={{ backgroundColor: 'var(--surface-bg)', border: '1px solid var(--border-color)' }}
+            >
+              <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Milestones</h2>
               <div className="mt-3 grid sm:grid-cols-3 gap-3">
                 {milestones.map((item) => (
-                  <div
-                    key={item.title}
-                    className="rounded-xl border border-purple-100 bg-purple-50/40 px-4 py-3"
-                  >
-                    <p className="text-sm font-semibold text-gray-900">{item.title}</p>
-                    <p className="text-xs text-gray-600 mt-1">{item.description}</p>
+                  <div key={item.title} className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(147,51,234,0.04)', border: '1px solid var(--border-color)' }}>
+                    <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{item.title}</p>
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{item.description}</p>
                   </div>
                 ))}
               </div>
-            </article>
+            </motion.article>
 
-            <article className="rounded-2xl border border-purple-100 bg-white p-5 sm:p-6 shadow-sm lg:min-h-[400px]">
-              <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Contact &amp; Guidance</h2>
-              <p className="mt-2 text-sm text-gray-600">
-                Get frame recommendations, lens advice, and order support from our specialists in
-                one place.
+            {/* Contact & Guidance */}
+            <motion.article
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+              className="rounded-2xl p-5 sm:p-6 shadow-sm"
+              style={{ backgroundColor: 'var(--surface-bg)', border: '1px solid var(--border-color)' }}
+            >
+              <h2 className="text-xl sm:text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Contact &amp; Guidance</h2>
+              <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                Get frame recommendations, lens advice, and order support from our specialists.
               </p>
-              <p className="mt-2 text-sm text-gray-600 leading-relaxed">
+              <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
                 Share your face shape, style preferences, and lens priorities, and our team will
-                suggest options that match comfort, daily use, and budget. We also review fit
-                screenshots to reduce returns and improve confidence before checkout.
+                suggest options that match comfort, daily use, and budget.
               </p>
               <div className="mt-4 grid sm:grid-cols-2 gap-3">
-                <div className="rounded-xl border border-purple-100 bg-purple-50/40 px-4 py-3">
-                  <p className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-purple-600" />
-                    Personalized fit recommendations
-                  </p>
-                  <p className="mt-1 text-xs text-gray-600">
-                    Tell us your style and fit preferences for tailored suggestions.
-                  </p>
-                </div>
-                <div className="rounded-xl border border-purple-100 bg-purple-50/40 px-4 py-3">
-                  <p className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-purple-600" />
-                    Fast response support
-                  </p>
-                  <p className="mt-1 text-xs text-gray-600">
-                    Our team replies quickly for trial, order, and prescription help.
-                  </p>
-                </div>
+                {[
+                  { text: 'Personalized fit recommendations', sub: 'Tell us your style and fit preferences for tailored suggestions.' },
+                  { text: 'Fast response support', sub: 'Our team replies quickly for trial, order, and prescription help.' },
+                ].map(item => (
+                  <div key={item.text} className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(147,51,234,0.04)', border: '1px solid var(--border-color)' }}>
+                    <p className="text-sm font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                      <CheckCircle2 className="w-4 h-4" style={{ color: 'var(--text-accent)' }} />
+                      {item.text}
+                    </p>
+                    <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{item.sub}</p>
+                  </div>
+                ))}
               </div>
               <div className="mt-3 grid sm:grid-cols-3 gap-2">
-                <div className="rounded-lg border border-purple-100 bg-purple-50/30 px-3 py-2">
-                  <p className="text-[11px] uppercase tracking-wide text-purple-700 font-semibold">
-                    Avg Reply
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-gray-900">&lt; 2 hours</p>
-                </div>
-                <div className="rounded-lg border border-purple-100 bg-purple-50/30 px-3 py-2">
-                  <p className="text-[11px] uppercase tracking-wide text-purple-700 font-semibold">
-                    Guidance Quality
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-gray-900">95% helpful rating</p>
-                </div>
-                <div className="rounded-lg border border-purple-100 bg-purple-50/30 px-3 py-2">
-                  <p className="text-[11px] uppercase tracking-wide text-purple-700 font-semibold">
-                    Coverage
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-gray-900">Fit + Lens + Order</p>
-                </div>
+                {[
+                  { label: 'Avg Reply', value: '< 2 hours' },
+                  { label: 'Guidance Quality', value: '95% helpful rating' },
+                  { label: 'Coverage', value: 'Fit + Lens + Order' },
+                ].map(s => (
+                  <div key={s.label} className="rounded-lg px-3 py-2" style={{ backgroundColor: 'rgba(147,51,234,0.04)', border: '1px solid var(--border-color)' }}>
+                    <p className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-accent)' }}>{s.label}</p>
+                    <p className="mt-1 text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{s.value}</p>
+                  </div>
+                ))}
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link
                   to="/contact"
-                  className="inline-flex items-center justify-center rounded-full bg-gradient-to-r from-purple-600 to-pink-600 px-5 py-2.5 text-sm font-semibold text-white hover:shadow-lg transition min-h-[42px]"
+                  className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-500/25 hover:shadow-xl transition min-h-[42px]"
                 >
                   Open Contact Form
                 </Link>
                 <Link
                   to="/try-on"
-                  className="inline-flex items-center justify-center rounded-full border border-purple-200 px-5 py-2.5 text-sm font-semibold text-purple-700 hover:bg-purple-50 transition min-h-[42px]"
+                  className="inline-flex items-center justify-center rounded-xl px-5 py-2.5 text-sm font-semibold transition min-h-[42px]"
+                  style={{ border: '2px solid var(--border-color)', color: 'var(--text-accent)' }}
                 >
                   Start Virtual Try-On
                 </Link>
               </div>
-              <div className="mt-4 rounded-xl border border-purple-100 bg-purple-50/30 px-4 py-3">
-                <p className="text-xs font-semibold text-gray-900">Why customers choose SpecsVision</p>
-                <p className="mt-1 text-xs text-gray-600 leading-relaxed">
-                  Better fit confidence, faster support, and practical lens guidance to help you
-                  pick the right frame in one pass.
-                </p>
-              </div>
-            </article>
+            </motion.article>
           </section>
 
           <aside className="lg:col-span-5 space-y-5">
-            <article className="rounded-2xl border border-purple-100 bg-white p-4 sm:p-5 shadow-sm">
-              <h2 className="text-lg font-semibold text-purple-700">Virtual Try-On</h2>
-              <p className="mt-1 text-xs sm:text-sm text-gray-600">
-                Try frames on in live webcam or upload a photo to see realistic fit and proportions.
+            {/* Try-On Preview */}
+            <motion.article
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="rounded-2xl p-4 sm:p-5 shadow-sm"
+              style={{ backgroundColor: 'var(--surface-bg)', border: '1px solid var(--border-color)' }}
+            >
+              <h2 className="text-lg font-semibold" style={{ color: 'var(--text-accent)' }}>Virtual Try-On</h2>
+              <p className="mt-1 text-xs sm:text-sm" style={{ color: 'var(--text-secondary)' }}>
+                Try frames on in live webcam or upload a photo.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
-                <button className="rounded-full border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs text-purple-700">
-                  Width: Natural
-                </button>
-                <button className="rounded-full border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs text-purple-700">
-                  Front
-                </button>
+                {['Width: Natural', 'Front'].map(tag => (
+                  <span key={tag} className="rounded-full px-3 py-1.5 text-xs" style={{ backgroundColor: 'rgba(147,51,234,0.06)', color: 'var(--text-accent)', border: '1px solid var(--border-color)' }}>
+                    {tag}
+                  </span>
+                ))}
               </div>
-              <div className="mt-3 rounded-xl border border-purple-100 p-2 bg-gradient-to-b from-purple-50 to-pink-50">
+              <div className="mt-3 rounded-xl p-2 overflow-hidden" style={{ background: 'linear-gradient(to bottom, rgba(147,51,234,0.06), rgba(236,72,153,0.06))', border: '1px solid var(--border-color)' }}>
                 <img
                   src="https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=600&q=80"
                   alt="Virtual try-on preview"
                   className="w-full h-56 object-cover rounded-lg"
                 />
               </div>
-              <p className="mt-3 text-xs font-medium text-gray-500">Featured Frames</p>
+              <p className="mt-3 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Featured Frames</p>
               <div className="mt-2 grid grid-cols-2 gap-2">
                 {featuredFrames.map((frame) => (
-                  <div
-                    key={frame}
-                    className="rounded-lg border border-purple-100 bg-purple-50/40 px-2.5 py-2 text-xs text-gray-700 text-center"
-                  >
+                  <div key={frame} className="rounded-lg px-2.5 py-2 text-xs text-center" style={{ backgroundColor: 'rgba(147,51,234,0.04)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)' }}>
                     {frame}
                   </div>
                 ))}
@@ -227,46 +217,55 @@ export default function About() {
               <div className="mt-4 grid grid-cols-2 gap-2">
                 <Link
                   to="/try-on"
-                  className="inline-flex items-center justify-center gap-1 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 px-4 py-2 text-xs font-semibold text-white min-h-[38px]"
+                  className="inline-flex items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 px-4 py-2 text-xs font-semibold text-white min-h-[38px] shadow-md"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
                   Try On Live
                 </Link>
-                <button className="inline-flex items-center justify-center gap-1 rounded-full border border-purple-200 px-4 py-2 text-xs font-semibold text-purple-700 min-h-[38px]">
+                <button className="inline-flex items-center justify-center gap-1 rounded-xl px-4 py-2 text-xs font-semibold min-h-[38px]" style={{ border: '2px solid var(--border-color)', color: 'var(--text-accent)' }}>
                   <Upload className="w-3.5 h-3.5" />
                   Upload Photo
                 </button>
               </div>
-              <p className="mt-3 text-xs text-gray-500">
+              <p className="mt-3 text-xs" style={{ color: 'var(--text-muted)' }}>
                 Tip: Use bright natural lighting for the most realistic lens and frame match.
               </p>
-            </article>
+            </motion.article>
 
-            <article className="rounded-2xl border border-purple-100 bg-white p-4 sm:p-5 shadow-sm space-y-3">
-              <h3 className="text-sm font-semibold text-gray-900">Store &amp; Support</h3>
-              <div className="space-y-2 text-xs sm:text-sm text-gray-600">
-                <p className="flex items-start gap-2">
-                  <MapPin className="w-4 h-4 text-purple-600 mt-0.5" />
-                  <span>1234 Market St, San Francisco, CA 94103</span>
-                </p>
-                <p className="flex items-center gap-2">
-                  <Phone className="w-4 h-4 text-purple-600" />
-                  <span>(415) 555-0182</span>
-                </p>
-                <p className="flex items-center gap-2">
-                  <Mail className="w-4 h-4 text-purple-600" />
-                  <span>help@specsvision.com</span>
-                </p>
-                <p className="flex items-center gap-2">
-                  <Clock3 className="w-4 h-4 text-purple-600" />
-                  <span>Mon-Fri 9am-6pm</span>
-                </p>
+            {/* Store & Support */}
+            <motion.article
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="rounded-2xl p-4 sm:p-5 shadow-sm space-y-3"
+              style={{ backgroundColor: 'var(--surface-bg)', border: '1px solid var(--border-color)' }}
+            >
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Store &amp; Support</h3>
+              <div className="space-y-2 text-xs sm:text-sm" style={{ color: 'var(--text-secondary)' }}>
+                {[
+                  { icon: MapPin, text: '1234 Market St, San Francisco, CA 94103' },
+                  { icon: Phone, text: '(415) 555-0182' },
+                  { icon: Mail, text: 'help@specsvision.com' },
+                  { icon: Clock3, text: 'Mon-Fri 9am-6pm' },
+                ].map(({ icon: Icon, text }) => (
+                  <p key={text} className="flex items-center gap-2">
+                    <Icon className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--text-accent)' }} />
+                    <span>{text}</span>
+                  </p>
+                ))}
               </div>
-            </article>
+            </motion.article>
 
-            <article className="rounded-2xl border border-purple-100 bg-white p-4 sm:p-5 shadow-sm">
-              <h3 className="text-sm font-semibold text-gray-900">Visit Our Flagship</h3>
-              <div className="mt-3 overflow-hidden rounded-xl border border-purple-100">
+            {/* Flagship */}
+            <motion.article
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+              className="rounded-2xl p-4 sm:p-5 shadow-sm"
+              style={{ backgroundColor: 'var(--surface-bg)', border: '1px solid var(--border-color)' }}
+            >
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Visit Our Flagship</h3>
+              <div className="mt-3 overflow-hidden rounded-xl" style={{ border: '1px solid var(--border-color)' }}>
                 <iframe
                   title="SpecsVision store map"
                   src="https://maps.google.com/maps?q=1234%20Market%20St%20San%20Francisco&t=&z=13&ie=UTF8&iwloc=&output=embed"
@@ -275,14 +274,14 @@ export default function About() {
                   referrerPolicy="no-referrer-when-downgrade"
                 />
               </div>
-              <p className="mt-3 text-xs text-gray-500">
+              <p className="mt-3 text-xs" style={{ color: 'var(--text-muted)' }}>
                 Open Mon-Fri, 9am-6pm. Walk-ins and virtual consults welcome.
               </p>
-              <button className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-purple-700">
+              <button className="mt-3 inline-flex items-center gap-1 text-xs font-semibold" style={{ color: 'var(--text-accent)' }}>
                 <Wand2 className="w-3.5 h-3.5" />
                 Book a free styling consult
               </button>
-            </article>
+            </motion.article>
           </aside>
         </div>
       </div>
