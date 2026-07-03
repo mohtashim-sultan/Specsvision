@@ -1,9 +1,18 @@
 import React, { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
+import { Filter, Hash } from "lucide-react";
 import { fetchAdminOrders, patchAdminOrderStatus } from "../../api/adminApi";
 import type { AdminOrderSummary } from "../../types/api";
 
 const STATUSES = ["pending", "processing", "shipped", "delivered", "cancelled"] as const;
+
+const statusColors: Record<string, { bg: string; text: string }> = {
+  pending: { bg: "rgba(245,158,11,0.12)", text: "#f59e0b" },
+  processing: { bg: "rgba(59,130,246,0.12)", text: "#3b82f6" },
+  shipped: { bg: "rgba(147,51,234,0.12)", text: "#9333ea" },
+  delivered: { bg: "rgba(34,197,94,0.12)", text: "#22c55e" },
+  cancelled: { bg: "rgba(239,68,68,0.12)", text: "#ef4444" },
+};
 
 function formatPrice(p: string) {
   const n = Number(p);
@@ -66,69 +75,132 @@ export default function AdminOrdersPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-lg p-gutter lg:p-xl">
-      <div>
-        <h2 className="font-display text-headline-lg text-on-surface">Orders</h2>
-        <p className="mt-xs font-body text-body-md text-on-surface-variant">Total: {total}</p>
+    <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6 lg:p-8">
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2
+            className="text-2xl sm:text-3xl font-bold"
+            style={{ color: 'var(--text-primary)' }}
+          >
+            Orders
+          </h2>
+          <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
+            Total: {total} orders
+          </p>
+        </div>
+
+        {/* Filter */}
+        <div className="flex items-center gap-2">
+          <Filter className="h-4 w-4" style={{ color: 'var(--text-muted)' }} />
+          <select
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            className="rounded-xl px-4 py-2 text-sm outline-none transition-all focus:ring-2 focus:ring-purple-500/30"
+            style={{
+              backgroundColor: 'var(--surface-bg)',
+              border: '1px solid var(--border-color)',
+              color: 'var(--text-primary)',
+            }}
+          >
+            <option value="">All statuses</option>
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s.charAt(0).toUpperCase() + s.slice(1)}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-sm">
-        <label className="font-label text-label-sm text-on-surface-variant">Status filter</label>
-        <select
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          className="rounded-xl border border-outline-variant bg-surface-container-lowest px-md py-sm font-label text-label-sm"
-        >
-          <option value="">All</option>
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="grid grid-cols-1 gap-gutter lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* Orders Table */}
         <div className="lg:col-span-2">
-          <div className="overflow-hidden rounded-2xl border border-outline-variant/40 bg-surface-container-lowest shadow-sm">
+          <div
+            className="overflow-hidden rounded-2xl shadow-sm"
+            style={{
+              backgroundColor: 'var(--surface-bg)',
+              border: '1px solid var(--border-color)',
+            }}
+          >
             {loading ? (
-              <p className="p-md text-on-surface-variant">Loading…</p>
+              <div className="flex items-center justify-center py-12">
+                <div className="w-8 h-8 border-2 border-purple-200 border-t-purple-600 rounded-full animate-spin" />
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
                   <thead>
-                    <tr className="border-b border-outline-variant bg-surface-container-high">
-                      <th className="px-md py-sm font-label text-label-md text-on-surface-variant">ID</th>
-                      <th className="px-md py-sm font-label text-label-md text-on-surface-variant">Customer</th>
-                      <th className="px-md py-sm font-label text-label-md text-on-surface-variant">Date</th>
-                      <th className="px-md py-sm font-label text-label-md text-on-surface-variant">Status</th>
-                      <th className="px-md py-sm text-right font-label text-label-md text-on-surface-variant">Total</th>
+                    <tr style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--surface-bg-secondary)' }}>
+                      {["ID", "Customer", "Date", "Status", "Total"].map((h) => (
+                        <th
+                          key={h}
+                          className={`px-5 py-3.5 text-xs font-semibold uppercase tracking-wider ${h === "Total" ? "text-right" : ""}`}
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          {h}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-outline-variant">
-                    {items.map((o) => (
-                      <tr
-                        key={o.id}
-                        className={`cursor-pointer hover:bg-surface-container-low ${selected?.id === o.id ? "bg-surface-container-low" : ""}`}
-                        onClick={() => {
-                          setSelected(o);
-                          setNextStatus("");
-                        }}
-                      >
-                        <td className="px-md py-md font-label text-label-md text-primary">#{o.id}</td>
-                        <td className="px-md py-md">
-                          <div className="font-body text-body-md font-medium">{o.user_full_name || "—"}</div>
-                          <div className="font-label text-label-sm text-outline">{o.user_email}</div>
+                  <tbody>
+                    {items.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-5 py-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                          No orders found
                         </td>
-                        <td className="px-md py-md font-body text-body-md text-on-surface-variant">{formatDate(o.created_at)}</td>
-                        <td className="px-md py-md">
-                          <span className="rounded-full bg-surface-container-high px-sm py-xs font-label text-label-sm capitalize text-on-surface">
-                            {o.status}
-                          </span>
-                        </td>
-                        <td className="px-md py-md text-right font-body text-body-md font-semibold">{formatPrice(o.total)}</td>
                       </tr>
-                    ))}
+                    ) : (
+                      items.map((o) => {
+                        const sColor = statusColors[o.status] || { bg: 'var(--surface-bg-secondary)', text: 'var(--text-secondary)' };
+                        return (
+                          <tr
+                            key={o.id}
+                            className="cursor-pointer transition-colors"
+                            style={{
+                              borderBottom: '1px solid var(--border-color)',
+                              backgroundColor: selected?.id === o.id ? 'var(--surface-bg-secondary)' : 'transparent',
+                            }}
+                            onClick={() => {
+                              setSelected(o);
+                              setNextStatus("");
+                            }}
+                            onMouseEnter={e => {
+                              if (selected?.id !== o.id) e.currentTarget.style.backgroundColor = 'var(--surface-bg-secondary)';
+                            }}
+                            onMouseLeave={e => {
+                              if (selected?.id !== o.id) e.currentTarget.style.backgroundColor = 'transparent';
+                            }}
+                          >
+                            <td className="px-5 py-4 text-sm font-semibold" style={{ color: 'var(--text-accent)' }}>
+                              #{o.id}
+                            </td>
+                            <td className="px-5 py-4">
+                              <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                                {o.user_full_name || "—"}
+                              </div>
+                              <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                                {o.user_email}
+                              </div>
+                            </td>
+                            <td className="px-5 py-4 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                              {formatDate(o.created_at)}
+                            </td>
+                            <td className="px-5 py-4">
+                              <span
+                                className="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold capitalize"
+                                style={{ backgroundColor: sColor.bg, color: sColor.text }}
+                              >
+                                {o.status}
+                              </span>
+                            </td>
+                            <td className="px-5 py-4 text-right text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                              {formatPrice(o.total)}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -136,27 +208,66 @@ export default function AdminOrdersPage() {
           </div>
         </div>
 
-        <aside className="rounded-2xl border border-outline-variant/40 bg-surface-container-lowest p-md shadow-sm">
-          <h3 className="font-headline text-headline-md text-on-surface">Update status</h3>
+        {/* Update Status Sidebar */}
+        <aside
+          className="rounded-2xl p-5 shadow-sm h-fit lg:sticky lg:top-24"
+          style={{
+            backgroundColor: 'var(--surface-bg)',
+            border: '1px solid var(--border-color)',
+          }}
+        >
+          <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
+            Update Status
+          </h3>
           {!selected ? (
-            <p className="mt-md font-body text-body-md text-on-surface-variant">Select an order from the table.</p>
+            <p className="mt-4 text-sm" style={{ color: 'var(--text-muted)' }}>
+              Select an order from the table to update its status.
+            </p>
           ) : (
-            <div className="mt-md space-y-md">
-              <p className="font-label text-label-sm text-outline">Order #{selected.id}</p>
-              <p className="font-body text-body-md">
-                Current: <span className="font-semibold capitalize">{selected.status}</span>
-              </p>
+            <div className="mt-4 space-y-4">
+              <div
+                className="flex items-center gap-2 px-3 py-2 rounded-xl"
+                style={{ backgroundColor: 'var(--surface-bg-secondary)' }}
+              >
+                <Hash className="h-4 w-4" style={{ color: 'var(--text-accent)' }} />
+                <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  Order #{selected.id}
+                </span>
+              </div>
               <div>
-                <label className="mb-xs block font-label text-label-sm text-on-surface-variant">New status</label>
+                <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                  Current status
+                </span>
+                <div className="mt-1">
+                  <span
+                    className="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold capitalize"
+                    style={{
+                      backgroundColor: (statusColors[selected.status] || { bg: 'var(--surface-bg-secondary)' }).bg,
+                      color: (statusColors[selected.status] || { text: 'var(--text-secondary)' }).text,
+                    }}
+                  >
+                    {selected.status}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-muted)' }}>
+                  New status
+                </label>
                 <select
                   value={nextStatus}
                   onChange={(e) => setNextStatus(e.target.value)}
-                  className="w-full rounded-xl border border-outline-variant bg-surface-container-low px-md py-sm"
+                  className="w-full rounded-xl px-4 py-2.5 text-sm outline-none transition-all focus:ring-2 focus:ring-purple-500/30"
+                  style={{
+                    backgroundColor: 'var(--surface-bg-secondary)',
+                    border: '1px solid var(--border-color)',
+                    color: 'var(--text-primary)',
+                  }}
                 >
                   <option value="">Choose…</option>
                   {STATUSES.map((s) => (
                     <option key={s} value={s}>
-                      {s}
+                      {s.charAt(0).toUpperCase() + s.slice(1)}
                     </option>
                   ))}
                 </select>
@@ -165,7 +276,7 @@ export default function AdminOrdersPage() {
                 type="button"
                 disabled={!nextStatus || updating}
                 onClick={() => void applyStatus()}
-                className="w-full rounded-xl bg-primary py-sm font-label text-label-md text-on-primary disabled:opacity-50"
+                className="w-full rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-500/25 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 hover:shadow-xl active:scale-[0.98]"
               >
                 {updating ? "Updating…" : "Apply"}
               </button>

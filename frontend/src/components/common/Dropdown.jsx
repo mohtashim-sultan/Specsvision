@@ -59,22 +59,31 @@ export default function Dropdown({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-3 sm:px-4 py-3 bg-white border-2 border-purple-200 rounded-xl text-left flex items-center justify-between hover:border-purple-400 active:border-purple-500 transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 min-h-[44px] touch-manipulation"
+        className="w-full px-3 sm:px-4 py-3 rounded-xl text-left flex items-center justify-between transition-all focus:outline-none focus:ring-2 min-h-[44px] touch-manipulation"
+        style={{
+          backgroundColor: 'var(--surface-bg)',
+          border: '2px solid var(--border-color)',
+          color: selected.length > 0 ? 'var(--text-primary)' : 'var(--text-muted)',
+        }}
+        onFocus={e => e.currentTarget.style.borderColor = 'var(--text-accent)'}
+        onBlur={e => e.currentTarget.style.borderColor = 'var(--border-color)'}
       >
-        <span className={selected.length > 0 ? 'text-gray-900 font-medium' : 'text-gray-500'}>
+        <span className={selected.length > 0 ? 'font-medium' : ''}>
           {displayText}
         </span>
         <div className="flex items-center gap-2">
           {selected.length > 0 && (
             <button
               onClick={handleClear}
-              className="p-1 hover:bg-purple-50 rounded transition-colors"
+              className="p-1 rounded transition-colors"
+              style={{ color: 'var(--text-accent)' }}
             >
-              <X className="w-4 h-4 text-purple-600" />
+              <X className="w-4 h-4" />
             </button>
           )}
           <ChevronDown
-            className={`w-5 h-5 text-purple-600 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+            className={`w-5 h-5 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+            style={{ color: 'var(--text-accent)' }}
           />
         </div>
       </button>
@@ -86,27 +95,34 @@ export default function Dropdown({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
-            className="absolute z-50 w-full mt-2 bg-white border-2 border-purple-200 rounded-xl shadow-xl max-h-60 overflow-y-auto overscroll-contain"
+            className="absolute z-50 w-full mt-2 rounded-xl shadow-xl max-h-60 overflow-y-auto overscroll-contain"
+            style={{
+              backgroundColor: 'var(--surface-bg)',
+              border: '2px solid var(--border-color)',
+            }}
           >
             {options.length > 0 ? (
               <div className="p-2">
                 {options.map((option) => {
-                  const selected = isSelected(option);
+                  const optSelected = isSelected(option);
                   return (
                     <button
                       key={option.value}
                       type="button"
                       onClick={() => handleSelect(option)}
-                      className={`w-full px-4 py-2.5 rounded-lg text-left transition-colors min-h-[44px] touch-manipulation ${
-                        selected
-                          ? 'bg-purple-100 text-purple-700 font-medium'
-                          : 'hover:bg-purple-50 active:bg-purple-100 text-gray-700'
-                      }`}
+                      className="w-full px-4 py-2.5 rounded-lg text-left transition-all min-h-[44px] touch-manipulation"
+                      style={{
+                        backgroundColor: optSelected ? 'rgba(147,51,234,0.1)' : 'transparent',
+                        color: optSelected ? 'var(--text-accent)' : 'var(--text-primary)',
+                        fontWeight: optSelected ? 600 : 400,
+                      }}
+                      onMouseEnter={e => { if (!optSelected) e.currentTarget.style.backgroundColor = 'var(--surface-bg-secondary)'; }}
+                      onMouseLeave={e => { if (!optSelected) e.currentTarget.style.backgroundColor = 'transparent'; }}
                     >
                       <div className="flex items-center justify-between">
                         <span>{option.label}</span>
-                        {selected && (
-                          <span className="text-purple-600 font-bold">✓</span>
+                        {optSelected && (
+                          <span style={{ color: 'var(--text-accent)' }} className="font-bold">✓</span>
                         )}
                       </div>
                     </button>
@@ -114,7 +130,7 @@ export default function Dropdown({
                 })}
               </div>
             ) : (
-              <div className="p-4 text-center text-gray-500">No options available</div>
+              <div className="p-4 text-center" style={{ color: 'var(--text-muted)' }}>No options available</div>
             )}
           </motion.div>
         )}

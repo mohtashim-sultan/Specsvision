@@ -46,7 +46,6 @@ export default function Cart() {
     const currentItem = items.find(item => item.product.id === productId);
     if (!currentItem) return;
     const nextQty = currentItem.quantity + delta;
-    
     try {
       setLoading(true);
       await setCartLineQuantity(productId, nextQty);
@@ -71,31 +70,34 @@ export default function Cart() {
     }
   };
 
-  const handleCheckout = () => {
-    navigate('/checkout');
-  };
+  const handleCheckout = () => navigate('/checkout');
 
   const subtotal = items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
 
   if (!isAuthenticated) {
     return (
-      <main className="py-20 min-h-[60vh] flex flex-col items-center justify-center bg-gradient-to-br from-purple-50 to-pink-50">
-        <h1 className="text-3xl font-bold text-gray-900 mb-4">Your Cart</h1>
-        <p className="text-gray-600 mb-6">Please log in to view and manage your cart.</p>
-        <Link
-          to="/login"
-          className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-8 py-3 rounded-xl font-semibold hover:shadow-xl active:scale-95 transition-all"
-        >
-          Log In
-        </Link>
+      <main className="py-20 min-h-[60vh] flex flex-col items-center justify-center">
+        <div className="text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-5" style={{ background: 'rgba(147,51,234,0.08)' }}>
+            <ShoppingCart className="w-8 h-8" style={{ color: 'var(--text-accent)' }} />
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-bold mb-3" style={{ color: 'var(--text-primary)' }}>Your Cart</h1>
+          <p className="mb-6" style={{ color: 'var(--text-secondary)' }}>Please log in to view and manage your cart.</p>
+          <Link
+            to="/login"
+            className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-8 py-3 rounded-xl font-semibold hover:shadow-xl hover:shadow-purple-500/25 active:scale-[0.98] transition-all"
+          >
+            Log In
+          </Link>
+        </div>
       </main>
     );
   }
 
   if (loading && items.length === 0) {
     return (
-      <main className="py-20 min-h-[60vh] flex items-center justify-center bg-gradient-to-br from-purple-50 to-pink-50">
+      <main className="py-20 min-h-[60vh] flex items-center justify-center">
         <LoadingSpinner size="lg" />
       </main>
     );
@@ -103,9 +105,9 @@ export default function Cart() {
 
   if (items.length === 0) {
     return (
-      <main className="py-6 sm:py-8 md:py-12 lg:py-16 bg-gradient-to-br from-purple-50 to-pink-50 min-h-[60vh]">
+      <main className="py-8 sm:py-12 min-h-[60vh]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-6 sm:mb-8">Your Cart</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold mb-8" style={{ color: 'var(--text-primary)' }}>Your Cart</h1>
           <EmptyState
             icon={ShoppingCart}
             title="Your cart is empty"
@@ -113,7 +115,7 @@ export default function Cart() {
             action={
               <Link
                 to="/shop"
-                className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white px-5 py-3 rounded-xl font-semibold hover:shadow-lg active:scale-95 transition-all"
+                className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white px-5 py-3 rounded-xl font-semibold hover:shadow-lg hover:shadow-purple-500/25 active:scale-[0.98] transition-all"
               >
                 <ShoppingBag className="w-5 h-5" />
                 Continue Shopping
@@ -126,18 +128,21 @@ export default function Cart() {
   }
 
   return (
-    <main className="py-6 sm:py-8 md:py-12 lg:py-16 bg-gradient-to-br from-purple-50 to-pink-50 min-h-[60vh]">
+    <main className="py-6 sm:py-8 md:py-12 min-h-[60vh]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Page header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8">
-          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900">
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8"
+        >
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold" style={{ color: 'var(--text-primary)' }}>
             Your Cart
           </h1>
-          <p className="text-gray-600 text-sm sm:text-base">
-            <span className="font-medium text-gray-800">{itemCount}</span>{' '}
-            {itemCount === 1 ? 'item' : 'items'}
-          </p>
-        </div>
+          <span className="text-xs font-medium px-3 py-1.5 rounded-full" style={{ backgroundColor: 'var(--surface-bg-secondary)', color: 'var(--text-muted)' }}>
+            {itemCount} {itemCount === 1 ? 'item' : 'items'}
+          </span>
+        </motion.div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
           {/* Cart items list */}
@@ -151,11 +156,16 @@ export default function Cart() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, x: -20 }}
                   transition={{ duration: 0.25 }}
-                  className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden flex flex-col sm:flex-row"
+                  className="rounded-2xl shadow-sm overflow-hidden flex flex-col sm:flex-row"
+                  style={{
+                    backgroundColor: 'var(--surface-bg)',
+                    border: '1px solid var(--border-color)',
+                  }}
                 >
                   <Link
                     to={`/shop/${item.product.id}`}
-                    className="block sm:w-28 md:w-36 flex-shrink-0 aspect-square sm:aspect-[1] bg-gray-100"
+                    className="block sm:w-28 md:w-36 flex-shrink-0 aspect-square sm:aspect-[1]"
+                    style={{ backgroundColor: 'var(--surface-bg-secondary)' }}
                   >
                     <img
                       src={item.product.image}
@@ -167,43 +177,49 @@ export default function Cart() {
                     <div className="flex-1 min-w-0">
                       <Link
                         to={`/shop/${item.product.id}`}
-                        className="font-bold text-base sm:text-lg text-gray-900 hover:text-purple-600 transition-colors line-clamp-2"
+                        className="font-bold text-base sm:text-lg transition-colors line-clamp-2"
+                        style={{ color: 'var(--text-primary)' }}
                       >
                         {item.product.name}
                       </Link>
-                      <p className="text-lg font-bold text-purple-600 mt-1">
+                      <p className="text-lg font-bold mt-1" style={{ color: 'var(--text-accent)' }}>
                         ${item.product.price.toFixed(2)}
                       </p>
                     </div>
                     <div className="flex items-center justify-between sm:justify-end gap-4">
-                      <div className="flex items-center rounded-xl border border-gray-200 bg-gray-50 overflow-hidden">
+                      <div
+                        className="flex items-center rounded-xl overflow-hidden"
+                        style={{ border: '1px solid var(--border-color)', backgroundColor: 'var(--surface-bg-secondary)' }}
+                      >
                         <button
                           type="button"
                           onClick={() => updateQuantity(item.product.id, -1)}
-                          className="p-2.5 sm:p-3 text-gray-600 hover:bg-purple-100 hover:text-purple-700 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center touch-manipulation"
+                          className="p-2.5 sm:p-3 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center touch-manipulation"
+                          style={{ color: 'var(--text-secondary)' }}
                           aria-label="Decrease quantity"
                         >
                           <Minus className="w-4 h-4" />
                         </button>
-                        <span className="w-10 sm:w-12 text-center font-semibold text-gray-900 tabular-nums">
+                        <span className="w-10 sm:w-12 text-center font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>
                           {item.quantity}
                         </span>
                         <button
                           type="button"
                           onClick={() => updateQuantity(item.product.id, 1)}
-                          className="p-2.5 sm:p-3 text-gray-600 hover:bg-purple-100 hover:text-purple-700 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center touch-manipulation"
+                          className="p-2.5 sm:p-3 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center touch-manipulation"
+                          style={{ color: 'var(--text-secondary)' }}
                           aria-label="Increase quantity"
                         >
                           <Plus className="w-4 h-4" />
                         </button>
                       </div>
-                      <p className="text-base sm:text-lg font-bold text-gray-900 w-20 text-right">
+                      <p className="text-base sm:text-lg font-bold w-20 text-right" style={{ color: 'var(--text-primary)' }}>
                         ${(item.product.price * item.quantity).toFixed(2)}
                       </p>
                       <button
                         type="button"
                         onClick={() => removeItem(item.product.id)}
-                        className="p-2.5 rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center touch-manipulation"
+                        className="p-2.5 rounded-lg text-red-500 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center touch-manipulation"
                         aria-label="Remove from cart"
                       >
                         <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -221,36 +237,44 @@ export default function Cart() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
-              className="bg-white rounded-2xl shadow-lg border border-gray-100 p-5 sm:p-6 lg:sticky lg:top-24"
+              className="rounded-2xl shadow-sm p-5 sm:p-6 lg:sticky lg:top-24"
+              style={{
+                backgroundColor: 'var(--surface-bg)',
+                border: '1px solid var(--border-color)',
+              }}
             >
-              <h2 className="text-lg font-bold text-gray-900 mb-4">Order Summary</h2>
+              <h2 className="text-lg font-bold mb-4" style={{ color: 'var(--text-primary)' }}>Order Summary</h2>
               <div className="space-y-3 mb-4">
-                <div className="flex justify-between text-gray-600">
-                  <span>Subtotal</span>
-                  <span className="font-medium text-gray-900">${subtotal.toFixed(2)}</span>
+                <div className="flex justify-between">
+                  <span style={{ color: 'var(--text-secondary)' }}>Subtotal</span>
+                  <span className="font-medium" style={{ color: 'var(--text-primary)' }}>${subtotal.toFixed(2)}</span>
                 </div>
-                <p className="text-xs sm:text-sm text-gray-500">
+                <p className="text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
                   Shipping & tax calculated at checkout
                 </p>
               </div>
-              <div className="border-t border-gray-200 pt-4 mb-6">
+              <div className="pt-4 mb-6" style={{ borderTop: '1px solid var(--border-color)' }}>
                 <div className="flex justify-between items-center">
-                  <span className="font-bold text-gray-900">Total</span>
-                  <span className="text-xl font-bold text-purple-600">
+                  <span className="font-bold" style={{ color: 'var(--text-primary)' }}>Total</span>
+                  <span className="text-xl font-bold" style={{ color: 'var(--text-accent)' }}>
                     ${subtotal.toFixed(2)}
                   </span>
                 </div>
               </div>
               <Link
                 to="/shop"
-                className="block w-full text-center py-3 px-4 rounded-xl font-semibold border-2 border-purple-200 text-purple-700 hover:bg-purple-50 active:bg-purple-100 transition-colors mb-3"
+                className="block w-full text-center py-3 px-4 rounded-xl font-semibold transition-all mb-3"
+                style={{
+                  border: '2px solid var(--border-color)',
+                  color: 'var(--text-accent)',
+                }}
               >
                 Continue Shopping
               </Link>
               <button
                 type="button"
                 onClick={handleCheckout}
-                className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 sm:py-3.5 px-4 rounded-xl font-semibold hover:shadow-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2 min-h-[48px]"
+                className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 sm:py-3.5 px-4 rounded-xl font-semibold hover:shadow-xl hover:shadow-purple-500/25 active:scale-[0.98] transition-all flex items-center justify-center gap-2 min-h-[48px]"
               >
                 Proceed to Checkout
                 <ArrowRight className="w-5 h-5 flex-shrink-0" />
