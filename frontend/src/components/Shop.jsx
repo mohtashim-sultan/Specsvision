@@ -2,30 +2,56 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Search } from 'lucide-react';
 import ProductCard from './ProductCard';
-import { featuredProducts } from '../data';
 import SearchBar from './shop/Searchbar';
 import FilterDropdown from './shop/FilterDropdown';
 import LoadingSpinner from './common/LoadingSpinner';
 import EmptyState from './common/EmptyState';
+import { fetchProducts } from '../api/productsApi';
+import { toStorefrontProduct } from '../utils/storefrontProduct';
 
 export default function Shop() {
-  const [products, setProducts] = useState(featuredProducts);
-  const [filteredProducts, setFilteredProducts] = useState(featuredProducts);
-  const [loading, setLoading] = useState(false);
+  const [products, setProducts] = useState([]);
+  const [filteredProducts, setFilteredProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Filter states
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [selectedBadges, setSelectedBadges] = useState([]);
   const [selectedFaceShapes, setSelectedFaceShapes] = useState([]);
+  const [selectedBrands, setSelectedBrands] = useState([]);
+  const [selectedStyles, setSelectedStyles] = useState([]);
+  const [selectedPriceRanges, setSelectedPriceRanges] = useState([]);
 
   // Filter options
   const categories = [
-    { value: 'all', label: 'All Categories' },
-    { value: 'aviator', label: 'Aviator' },
-    { value: 'rectangle', label: 'Rectangle' },
-    { value: 'cat-eye', label: 'Cat Eye' },
-    { value: 'sporty', label: 'Sporty' },
+    { value: 'Aviator', label: 'Aviator' },
+    { value: 'Wayfarer', label: 'Wayfarer' },
+    { value: 'Round', label: 'Round' },
+    { value: 'Cat-Eye', label: 'Cat-Eye' },
+    { value: 'Rectangle', label: 'Rectangle' },
+    { value: 'Oval', label: 'Oval' },
+  ];
+
+  const brands = [
+    { value: 'SpecsVision', label: 'SpecsVision' },
+    { value: 'Ray-Ban', label: 'Ray-Ban' },
+    { value: 'Oakley', label: 'Oakley' },
+  ];
+
+  const styles = [
+    { value: 'Classic', label: 'Classic' },
+    { value: 'Sporty', label: 'Sporty' },
+    { value: 'Vintage', label: 'Vintage' },
+    { value: 'Modern', label: 'Modern' },
+    { value: 'Retro', label: 'Retro' },
+  ];
+
+  const priceRanges = [
+    { value: 'under-50', label: 'Under $50' },
+    { value: '50-80', label: '$50 to $80' },
+    { value: '80-100', label: '$80 to $100' },
+    { value: 'over-100', label: 'Over $100' },
   ];
 
   const badges = [
@@ -42,10 +68,26 @@ export default function Shop() {
     { value: 'Heart', label: 'Heart' },
   ];
 
-  // Extract unique face shapes from products
+  // Fetch products from backend on mount
   useEffect(() => {
-    const allFaceShapes = featuredProducts.flatMap((p) => p.faceShapes || []);
-    // You can use this to dynamically generate face shape options
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await fetchProducts();
+        const mapped = list.map(toStorefrontProduct);
+        if (!cancelled) {
+          setProducts(mapped);
+          setFilteredProducts(mapped);
+        }
+      } catch (err) {
+        console.error("Failed to load products:", err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Filter and search logic
@@ -62,10 +104,22 @@ export default function Shop() {
       );
     }
 
-    // Badge filter
-    if (selectedBadges.length > 0) {
-      const badgeValues = selectedBadges.map((b) => b.value);
-      filtered = filtered.filter((p) => badgeValues.includes(p.badge));
+    // Category filter
+    if (selectedCategories.length > 0) {
+      const categoryValues = selectedCategories.map((c) => c.value);
+      filtered = filtered.filter((p) => p.category && categoryValues.includes(p.category));
+    }
+
+    // Brand filter
+    if (selectedBrands.length > 0) {
+      const brandValues = selectedBrands.map((b) => b.value);
+      filtered = filtered.filter((p) => brandValues.includes(p.brand));
+    }
+
+    // Style filter
+    if (selectedStyles.length > 0) {
+      const styleValues = selectedStyles.map((s) => s.value);
+      filtered = filtered.filter((p) => styleValues.includes(p.style));
     }
 
     // Face shape filter
@@ -76,11 +130,43 @@ export default function Shop() {
       );
     }
 
-    setTimeout(() => {
+    // Price Range filter
+    if (selectedPriceRanges.length > 0) {
+      const rangeValues = selectedPriceRanges.map((r) => r.value);
+      filtered = filtered.filter((p) => {
+        const priceVal = Number(p.price);
+        return rangeValues.some((range) => {
+          if (range === 'under-50') return priceVal < 50;
+          if (range === '50-80') return priceVal >= 50 && priceVal <= 80;
+          if (range === '80-100') return priceVal >= 80 && priceVal <= 100;
+          if (range === 'over-100') return priceVal > 100;
+          return true;
+        });
+      });
+    }
+
+    // Badge filter
+    if (selectedBadges.length > 0) {
+      const badgeValues = selectedBadges.map((b) => b.value);
+      filtered = filtered.filter((p) => badgeValues.includes(p.badge));
+    }
+
+    const timer = setTimeout(() => {
       setFilteredProducts(filtered);
       setLoading(false);
-    }, 300);
-  }, [searchQuery, selectedBadges, selectedFaceShapes, products]);
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [
+    searchQuery,
+    selectedCategories,
+    selectedBrands,
+    selectedStyles,
+    selectedFaceShapes,
+    selectedPriceRanges,
+    selectedBadges,
+    products
+  ]);
 
   const handleSearch = (query) => {
     setSearchQuery(query);
@@ -100,13 +186,27 @@ export default function Shop() {
           <SearchBar onSearch={handleSearch} />
         </div>
 
-        {/* Filters */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
+        {/* Filters Grid */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 mb-6 sm:mb-8">
           <FilterDropdown
-            label="Badge"
-            options={badges}
-            selected={selectedBadges}
-            onChange={setSelectedBadges}
+            label="Category"
+            options={categories}
+            selected={selectedCategories}
+            onChange={setSelectedCategories}
+            multiple={true}
+          />
+          <FilterDropdown
+            label="Brand"
+            options={brands}
+            selected={selectedBrands}
+            onChange={setSelectedBrands}
+            multiple={true}
+          />
+          <FilterDropdown
+            label="Style"
+            options={styles}
+            selected={selectedStyles}
+            onChange={setSelectedStyles}
             multiple={true}
           />
           <FilterDropdown
@@ -114,6 +214,20 @@ export default function Shop() {
             options={faceShapes}
             selected={selectedFaceShapes}
             onChange={setSelectedFaceShapes}
+            multiple={true}
+          />
+          <FilterDropdown
+            label="Price"
+            options={priceRanges}
+            selected={selectedPriceRanges}
+            onChange={setSelectedPriceRanges}
+            multiple={true}
+          />
+          <FilterDropdown
+            label="Badge"
+            options={badges}
+            selected={selectedBadges}
+            onChange={setSelectedBadges}
             multiple={true}
           />
         </div>
@@ -130,7 +244,7 @@ export default function Shop() {
                 key={p.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
+                transition={{ delay: Math.min(index * 0.03, 0.5) }}
               >
                 <ProductCard product={p} />
               </motion.div>
