@@ -2,8 +2,28 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Star, Eye, ShoppingCart } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useAuth } from '../context/AuthContext';
+import { addCartItem } from '../api/cartApi';
+import toast from 'react-hot-toast';
 
 export default function ProductCard({ product }) {
+  const { isAuthenticated, refreshCart } = useAuth();
+
+  const handleAddToCart = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isAuthenticated) {
+      toast.error("Please login to add items to cart");
+      return;
+    }
+    try {
+      await addCartItem(product.id, 1);
+      await refreshCart();
+      toast.success(`${product.name} added to cart`);
+    } catch (err) {
+      toast.error(err.message || "Failed to add to cart");
+    }
+  };
   return (
     <motion.div
       whileHover={{ y: -5 }}
@@ -86,6 +106,7 @@ export default function ProductCard({ product }) {
             )}
           </div>
           <button 
+            onClick={handleAddToCart}
             className="bg-gray-100 hover:bg-purple-100 active:bg-purple-200 text-gray-700 hover:text-purple-700 p-2 sm:p-2.5 rounded-lg transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center touch-manipulation"
             aria-label="Add to cart"
           >
