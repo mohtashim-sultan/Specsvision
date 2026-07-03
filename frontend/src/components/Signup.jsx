@@ -2,22 +2,28 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useAuth } from '../context/AuthContext';
 
 export default function Signup() {
   const navigate = useNavigate();
+  const { register } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
 
-  const onSubmit = (e) => {
+  const onSubmit = async (e) => {
     e.preventDefault();
     setError('');
     if (!name || !email || !password) return setError('All fields required');
-    // TODO: send to backend
-    console.log('signup', { name, email, password });
-    navigate('/login');
+    
+    try {
+      await register({ email, password, name });
+      navigate('/');
+    } catch (err) {
+      setError(err.message || 'Signup failed');
+    }
   };
 
   return (

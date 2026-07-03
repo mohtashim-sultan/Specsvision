@@ -1,11 +1,39 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Sparkles, ArrowRight, Play } from 'lucide-react';
 import ProductCard from './ProductCard';
-import { featuredProducts } from '../data';
 import { motion } from 'framer-motion';
+import { fetchProducts } from '../api/productsApi';
+import { displayImageUrl, displayBadge, displayFaceShapes } from '../utils/storefrontProduct';
 
 export default function Home() {
+  const [products, setProducts] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await fetchProducts();
+        const mapped = list.map(p => ({
+          ...p,
+          image: displayImageUrl(p),
+          badge: displayBadge(p),
+          faceShapes: displayFaceShapes(p),
+          rating: 4.7 + (p.id % 3) * 0.1,
+          reviews: 120 + p.id * 17,
+          originalPrice: p.id % 3 === 0 ? Math.round(Number(p.price) * 1.25 * 100) / 100 : null,
+        }));
+        if (!cancelled) {
+          setProducts(mapped.slice(0, 4));
+        }
+      } catch (err) {
+        console.error("Failed to load featured products:", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   return (
     <main>
       {/* Hero Section */}
@@ -92,7 +120,7 @@ export default function Home() {
             </Link>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-            {featuredProducts.map((p, index) => (
+            {products.map((p, index) => (
               <motion.div
                 key={p.id}
                 initial={{ opacity: 0, y: 20 }}

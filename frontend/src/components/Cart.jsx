@@ -1,37 +1,105 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { ShoppingCart, Minus, Plus, Trash2, ArrowRight, ShoppingBag } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import EmptyState from './common/EmptyState';
-import { featuredProducts } from '../data';
-
-// Build initial cart with 2 sample items for demo (frontend only)
-const initialCartItems = [
-  { product: featuredProducts[0], quantity: 1 },
-  { product: featuredProducts[2], quantity: 2 },
-];
+import { useAuth } from '../context/AuthContext';
+import { fetchCart, removeCartLine, setCartLineQuantity } from '../api/cartApi';
+import toast from 'react-hot-toast';
+import { displayImageUrl } from '../utils/storefrontProduct';
+import LoadingSpinner from './common/LoadingSpinner';
 
 export default function Cart() {
-  const [items, setItems] = useState(initialCartItems);
+  const { isAuthenticated, refreshCart } = useAuth();
+  const navigate = useNavigate();
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const updateQuantity = (productId, delta) => {
-    setItems((prev) =>
-      prev
-        .map((item) =>
-          item.product.id === productId
-            ? { ...item, quantity: Math.min(99, Math.max(1, item.quantity + delta)) }
-            : item
-        )
-        .filter((item) => item.quantity > 0)
-    );
+  const loadCartData = async () => {
+    try {
+      const data = await fetchCart();
+      const mapped = data.items.map(line => ({
+        product: {
+          ...line.product,
+          price: Number(line.product.price),
+          image: displayImageUrl(line.product)
+        },
+        quantity: line.quantity
+      }));
+      setItems(mapped);
+    } catch (err) {
+      toast.error(err.message || "Could not load cart");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const removeItem = (productId) => {
-    setItems((prev) => prev.filter((item) => item.product.id !== productId));
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setLoading(false);
+      return;
+    }
+    loadCartData();
+  }, [isAuthenticated]);
+
+  const updateQuantity = async (productId, delta) => {
+    const currentItem = items.find(item => item.product.id === productId);
+    if (!currentItem) return;
+    const nextQty = currentItem.quantity + delta;
+    
+    try {
+      setLoading(true);
+      await setCartLineQuantity(productId, nextQty);
+      await loadCartData();
+      await refreshCart();
+    } catch (err) {
+      toast.error(err.message || "Failed to update quantity");
+      setLoading(false);
+    }
+  };
+
+  const removeItem = async (productId) => {
+    try {
+      setLoading(true);
+      await removeCartLine(productId);
+      await loadCartData();
+      await refreshCart();
+      toast.success("Item removed from cart");
+    } catch (err) {
+      toast.error(err.message || "Failed to remove item");
+      setLoading(false);
+    }
+  };
+
+  const handleCheckout = () => {
+    navigate('/checkout');
   };
 
   const subtotal = items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
+
+  if (!isAuthenticated) {
+    return (
+      <main className="py-20 min-h-[60vh] flex flex-col items-center justify-center bg-gradient-to-br from-purple-50 to-pink-50">
+        <h1 className="text-3xl font-bold text-gray-900 mb-4">Your Cart</h1>
+        <p className="text-gray-600 mb-6">Please log in to view and manage your cart.</p>
+        <Link
+          to="/login"
+          className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-8 py-3 rounded-xl font-semibold hover:shadow-xl active:scale-95 transition-all"
+        >
+          Log In
+        </Link>
+      </main>
+    );
+  }
+
+  if (loading && items.length === 0) {
+    return (
+      <main className="py-20 min-h-[60vh] flex items-center justify-center bg-gradient-to-br from-purple-50 to-pink-50">
+        <LoadingSpinner size="lg" />
+      </main>
+    );
+  }
 
   if (items.length === 0) {
     return (
@@ -181,6 +249,7 @@ export default function Cart() {
               </Link>
               <button
                 type="button"
+                onClick={handleCheckout}
                 className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 sm:py-3.5 px-4 rounded-xl font-semibold hover:shadow-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2 min-h-[48px]"
               >
                 Proceed to Checkout
