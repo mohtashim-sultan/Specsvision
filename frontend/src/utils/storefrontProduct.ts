@@ -72,8 +72,9 @@ export function toStorefrontProduct(p: Product): StorefrontProduct {
     image,
     badge,
     faceShapes,
-    rating: 4.7 + (p.id % 3) * 0.1,
-    reviews: 120 + p.id * 17,
+    // Real, review-derived values from the API (0 until customers leave reviews).
+    rating: p.avg_rating ?? 0,
+    reviews: p.review_count ?? 0,
     originalPrice: original,
     brand,
     style,

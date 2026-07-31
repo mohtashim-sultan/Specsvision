@@ -1,13 +1,30 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Star, Eye, ShoppingCart } from 'lucide-react';
+import { Star, Eye, ShoppingCart, Heart, GitCompare } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
+import { useWishlist } from '../context/WishlistContext';
+import { useCompare } from '../context/CompareContext';
 import { addCartItem } from '../api/cartApi';
 import toast from 'react-hot-toast';
 
 export default function ProductCard({ product }) {
   const { isAuthenticated, refreshCart } = useAuth();
+  const { isWishlisted, toggle: toggleWishlist } = useWishlist();
+  const { has: inCompare, toggle: toggleCompare } = useCompare();
+  const wishlisted = isWishlisted(product.id);
+
+  const handleWishlist = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleWishlist(product.id, product.name);
+  };
+
+  const handleCompare = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleCompare(product.id, product.name);
+  };
 
   const handleAddToCart = async (e) => {
     e.preventDefault();
@@ -58,10 +75,30 @@ export default function ProductCard({ product }) {
             {product.badge}
           </span>
         </div>
-        <div className="absolute top-2 sm:top-3 right-2 sm:right-3 opacity-0 group-hover:opacity-100 md:group-hover:opacity-100 transition-opacity duration-300 z-10">
+        <div className="absolute top-2 sm:top-3 right-2 sm:right-3 z-10 flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={handleWishlist}
+            className="p-2 rounded-full shadow-lg transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center backdrop-blur-sm"
+            style={{ backgroundColor: 'rgba(255,255,255,0.9)' }}
+            aria-label={wishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
+            title={wishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
+          >
+            <Heart className={`w-4 h-4 ${wishlisted ? 'fill-current text-pink-600' : 'text-gray-500'}`} />
+          </button>
+          <button
+            type="button"
+            onClick={handleCompare}
+            className="p-2 rounded-full shadow-lg transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center backdrop-blur-sm opacity-0 group-hover:opacity-100"
+            style={{ backgroundColor: inCompare ? 'rgba(147,51,234,0.95)' : 'rgba(255,255,255,0.9)' }}
+            aria-label="Toggle compare"
+            title={inCompare ? 'Remove from compare' : 'Add to compare'}
+          >
+            <GitCompare className={`w-4 h-4 ${inCompare ? 'text-white' : 'text-purple-600'}`} />
+          </button>
           <Link
             to={`/try-on/${product.id}`}
-            className="p-2 rounded-full shadow-lg transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center backdrop-blur-sm"
+            className="p-2 rounded-full shadow-lg transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center backdrop-blur-sm opacity-0 group-hover:opacity-100"
             style={{ backgroundColor: 'rgba(255,255,255,0.9)' }}
             aria-label="Quick view"
           >
@@ -85,12 +122,16 @@ export default function ProductCard({ product }) {
           </h3>
         </Link>
         <div className="flex items-center gap-2 mb-2">
-          <div className="flex items-center text-yellow-400">
-            <Star className="w-4 h-4 fill-current" />
-            <span className="text-xs sm:text-sm ml-1" style={{ color: 'var(--text-secondary)' }}>
-              {product.rating} ({product.reviews})
-            </span>
-          </div>
+          {product.reviews > 0 ? (
+            <div className="flex items-center text-yellow-400">
+              <Star className="w-4 h-4 fill-current" />
+              <span className="text-xs sm:text-sm ml-1" style={{ color: 'var(--text-secondary)' }}>
+                {Number(product.rating).toFixed(1)} ({product.reviews})
+              </span>
+            </div>
+          ) : (
+            <span className="text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>No reviews yet</span>
+          )}
         </div>
         <div className="flex flex-wrap gap-1 mb-3">
           {product.faceShapes?.map((shape) => (

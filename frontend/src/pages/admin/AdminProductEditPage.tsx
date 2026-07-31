@@ -13,28 +13,41 @@ function getFullImageUrl(url: string) {
   return url;
 }
 
+// Must match the server-side ceilings in backend/config.py.
+const MAX_IMAGE_MB = 5;
+const MAX_MODEL_MB = 32;
+
 interface ImageUploadFieldProps {
   label: string;
   description: string;
   value: string;
   onChange: (url: string) => void;
   required?: boolean;
-  allowPngOr3D?: boolean;
+  /** Accept only glTF try-on models (.glb/.gltf) rather than images. */
+  modelOnly?: boolean;
 }
 
-function ImageUploadField({ label, description, value, onChange, required, allowPngOr3D }: ImageUploadFieldProps) {
+function ImageUploadField({ label, description, value, onChange, required, modelOnly }: ImageUploadFieldProps) {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const is3D = value.toLowerCase().endsWith(".glb") || value.toLowerCase().endsWith(".gltf");
 
   const validateAndUpload = async (file: File) => {
-    if (allowPngOr3D) {
+    if (modelOnly) {
       const ext = file.name.split(".").pop()?.toLowerCase();
       if (ext !== "glb" && ext !== "gltf") {
         toast.error("Only 3-D models (.glb, .gltf) are allowed for virtual try-on.");
         return;
       }
+    }
+
+    // Check the size up front so a large model fails immediately instead of after
+    // the whole upload has streamed to a server that will reject it.
+    const limitMb = modelOnly ? MAX_MODEL_MB : MAX_IMAGE_MB;
+    if (file.size > limitMb * 1024 * 1024) {
+      toast.error(`${file.name} is ${(file.size / (1024 * 1024)).toFixed(1)} MB — the limit is ${limitMb} MB.`);
+      return;
     }
 
     setUploading(true);
@@ -114,7 +127,7 @@ function ImageUploadField({ label, description, value, onChange, required, allow
             ref={fileInputRef}
             onChange={handleFileChange}
             className="hidden"
-            accept={allowPngOr3D ? ".glb,.gltf" : "image/*"}
+            accept={modelOnly ? ".glb,.gltf,model/gltf-binary,model/gltf+json" : "image/*"}
           />
           {uploading ? (
             <div className="space-y-2">
@@ -130,7 +143,9 @@ function ImageUploadField({ label, description, value, onChange, required, allow
                 Drag & drop or <span className="text-primary hover:underline">browse</span>
               </p>
               <p className="text-[10px] text-on-surface-variant/60">
-                {allowPngOr3D ? "GLB/GLTF 3D model" : "JPG, PNG, WebP up to 5MB"}
+                {modelOnly
+                  ? `GLB or GLTF 3D model up to ${MAX_MODEL_MB}MB`
+                  : `JPG, PNG, WebP up to ${MAX_IMAGE_MB}MB`}
               </p>
             </div>
           )}
@@ -257,8 +272,19 @@ export default function AdminProductEditPage() {
   const [lifestyleImages, setLifestyleImages] = useState<string[]>([]);
   const [thumbnail, setThumbnail] = useState("");
   const [category, setCategory] = useState("");
+  const [material, setMaterial] = useState("");
+  const [lensWidth, setLensWidth] = useState("");
+  const [bridge, setBridge] = useState("");
+  const [temple, setTemple] = useState("");
+  const [lensFeatures, setLensFeatures] = useState("");
+  const [colors, setColors] = useState<{ name: string; hex: string }[]>([]);
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
+
+  const numOrNull = (s: string) => {
+    const n = parseInt(s, 10);
+    return Number.isFinite(n) ? n : null;
+  };
 
   useEffect(() => {
     if (isNew) {
@@ -297,6 +323,12 @@ export default function AdminProductEditPage() {
         setLifestyleImages(parseLifestyle(p.lifestyle_images));
         setThumbnail(p.thumbnail || "");
         setCategory(p.category || "");
+        setMaterial(p.material || "");
+        setLensWidth(p.lens_width_mm != null ? String(p.lens_width_mm) : "");
+        setBridge(p.bridge_mm != null ? String(p.bridge_mm) : "");
+        setTemple(p.temple_mm != null ? String(p.temple_mm) : "");
+        setLensFeatures(p.lens_features || "");
+        setColors(Array.isArray(p.colors) ? p.colors : []);
       } catch {
         try {
           const list = await fetchAdminProducts();
@@ -313,6 +345,12 @@ export default function AdminProductEditPage() {
             setLifestyleImages(parseLifestyle(p.lifestyle_images));
             setThumbnail(p.thumbnail || "");
             setCategory(p.category || "");
+            setMaterial(p.material || "");
+            setLensWidth(p.lens_width_mm != null ? String(p.lens_width_mm) : "");
+            setBridge(p.bridge_mm != null ? String(p.bridge_mm) : "");
+            setTemple(p.temple_mm != null ? String(p.temple_mm) : "");
+            setLensFeatures(p.lens_features || "");
+            setColors(Array.isArray(p.colors) ? p.colors : []);
           } else if (!cancelled) {
             toast.error("Product not found");
             navigate("/admin/products", { replace: true });
@@ -351,6 +389,20 @@ export default function AdminProductEditPage() {
       const finalImageUrl = thumbnail || frontView || sideView || "";
       const lifestyleStr = lifestyleImages.length > 0 ? JSON.stringify(lifestyleImages) : null;
 
+      // Only keep fully-filled color rows (name + valid hex); backend rejects malformed hex.
+      const cleanColors = colors
+        .map((c) => ({ name: c.name.trim(), hex: c.hex.trim() }))
+        .filter((c) => c.name && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(c.hex));
+
+      const specFields = {
+        material: material.trim() || null,
+        lens_width_mm: numOrNull(lensWidth),
+        bridge_mm: numOrNull(bridge),
+        temple_mm: numOrNull(temple),
+        lens_features: lensFeatures.trim() || null,
+        colors: cleanColors,
+      };
+
       if (isNew) {
         const created = await createAdminProduct({
           sku: sku.trim(),
@@ -364,6 +416,7 @@ export default function AdminProductEditPage() {
           thumbnail: thumbnail || null,
           stock_quantity: stockNum,
           category: category.trim() || null,
+          ...specFields,
         });
         toast.success("Product created");
         navigate(`/admin/products/${created.id}`, { replace: true });
@@ -380,6 +433,7 @@ export default function AdminProductEditPage() {
           thumbnail: thumbnail || null,
           stock_quantity: stockNum,
           category: category.trim() || null,
+          ...specFields,
         });
         toast.success("Saved");
       }
@@ -474,7 +528,7 @@ export default function AdminProductEditPage() {
               value={frontView}
               onChange={setFrontView}
               required
-              allowPngOr3D
+              modelOnly
             />
             <ImageUploadField
               label="Thumbnail"
@@ -501,6 +555,65 @@ export default function AdminProductEditPage() {
               rows={4}
               className="w-full resize-none rounded-xl border border-outline-variant bg-surface-container-low px-md py-sm outline-none focus:ring-2 focus:ring-primary-container"
             />
+          </div>
+
+          {/* Specifications (data-driven; shown on the product page) */}
+          <div className="md:col-span-2 border-t border-outline-variant pt-md">
+            <h3 className="mb-sm font-label text-label-md font-semibold text-on-surface">Frame Specifications</h3>
+            <div className="grid grid-cols-2 gap-md sm:grid-cols-4">
+              <div>
+                <label className="mb-xs block text-label-sm text-on-surface-variant">Material</label>
+                <input value={material} onChange={(e) => setMaterial(e.target.value)} placeholder="Acetate"
+                  className="w-full rounded-xl border border-outline-variant bg-surface-container-low px-md py-sm outline-none focus:ring-2 focus:ring-primary-container" />
+              </div>
+              <div>
+                <label className="mb-xs block text-label-sm text-on-surface-variant">Lens Width (mm)</label>
+                <input type="number" min={0} value={lensWidth} onChange={(e) => setLensWidth(e.target.value)} placeholder="54"
+                  className="w-full rounded-xl border border-outline-variant bg-surface-container-low px-md py-sm outline-none focus:ring-2 focus:ring-primary-container" />
+              </div>
+              <div>
+                <label className="mb-xs block text-label-sm text-on-surface-variant">Bridge (mm)</label>
+                <input type="number" min={0} value={bridge} onChange={(e) => setBridge(e.target.value)} placeholder="18"
+                  className="w-full rounded-xl border border-outline-variant bg-surface-container-low px-md py-sm outline-none focus:ring-2 focus:ring-primary-container" />
+              </div>
+              <div>
+                <label className="mb-xs block text-label-sm text-on-surface-variant">Temple (mm)</label>
+                <input type="number" min={0} value={temple} onChange={(e) => setTemple(e.target.value)} placeholder="145"
+                  className="w-full rounded-xl border border-outline-variant bg-surface-container-low px-md py-sm outline-none focus:ring-2 focus:ring-primary-container" />
+              </div>
+            </div>
+            <div className="mt-md">
+              <label className="mb-xs block text-label-sm text-on-surface-variant">Lens Features</label>
+              <input value={lensFeatures} onChange={(e) => setLensFeatures(e.target.value)} placeholder="UV400 Protection & Blue Light Blocking"
+                className="w-full rounded-xl border border-outline-variant bg-surface-container-low px-md py-sm outline-none focus:ring-2 focus:ring-primary-container" />
+            </div>
+          </div>
+
+          {/* Color options */}
+          <div className="md:col-span-2 border-t border-outline-variant pt-md">
+            <div className="mb-sm flex items-center justify-between">
+              <h3 className="font-label text-label-md font-semibold text-on-surface">Color Options</h3>
+              <button type="button" onClick={() => setColors((c) => [...c, { name: "", hex: "#000000" }])}
+                className="text-xs font-semibold text-primary hover:underline">+ Add color</button>
+            </div>
+            {colors.length === 0 && <p className="text-xs text-on-surface-variant/70">No colors — the product page hides the swatch selector.</p>}
+            <div className="space-y-2">
+              {colors.map((c, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input type="color" value={/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(c.hex) ? c.hex : "#000000"}
+                    onChange={(e) => setColors((arr) => arr.map((x, j) => (j === i ? { ...x, hex: e.target.value } : x)))}
+                    className="h-9 w-12 rounded border border-outline-variant bg-transparent" />
+                  <input value={c.name} placeholder="Color name (e.g. Matte Black)"
+                    onChange={(e) => setColors((arr) => arr.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
+                    className="flex-1 rounded-xl border border-outline-variant bg-surface-container-low px-md py-sm outline-none focus:ring-2 focus:ring-primary-container" />
+                  <input value={c.hex} placeholder="#000000"
+                    onChange={(e) => setColors((arr) => arr.map((x, j) => (j === i ? { ...x, hex: e.target.value } : x)))}
+                    className="w-28 rounded-xl border border-outline-variant bg-surface-container-low px-md py-sm outline-none focus:ring-2 focus:ring-primary-container" />
+                  <button type="button" onClick={() => setColors((arr) => arr.filter((_, j) => j !== i))}
+                    className="px-2 text-error hover:underline text-sm">Remove</button>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
         <div className="flex flex-col gap-sm border-t border-outline-variant pt-md sm:flex-row">

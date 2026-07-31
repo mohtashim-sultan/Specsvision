@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { updateProfileRequest } from '../api/authApi';
-import { fetchUserOrders } from '../api/cartApi';
+import { fetchUserOrders, cancelOrder } from '../api/cartApi';
 import { User, Mail, Calendar, Package, ChevronDown, ChevronUp, CheckCircle, Clock, Truck, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/common/LoadingSpinner';
@@ -18,6 +18,20 @@ export default function UserProfilePage() {
   const [orders, setOrders] = useState<any[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [expandedOrders, setExpandedOrders] = useState<Record<number, boolean>>({});
+  const [cancellingId, setCancellingId] = useState<number | null>(null);
+
+  const handleCancelOrder = async (orderId: number) => {
+    setCancellingId(orderId);
+    try {
+      const updated = await cancelOrder(orderId);
+      setOrders(prev => prev.map(o => (o.id === orderId ? { ...o, ...updated } : o)));
+      toast.success(`Order #${orderId} cancelled and items restocked.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to cancel order");
+    } finally {
+      setCancellingId(null);
+    }
+  };
 
   useEffect(() => {
     if (user) {
@@ -238,10 +252,29 @@ export default function UserProfilePage() {
                               </li>
                             ))}
                           </ul>
+                          {order.tracking_number && (
+                            <div className="pt-2 flex items-center gap-2 text-xs" style={{ borderTop: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                              <Truck className="w-3.5 h-3.5" />
+                              <span>Tracking: <strong style={{ color: 'var(--text-primary)' }}>{order.tracking_number}</strong></span>
+                            </div>
+                          )}
                           {order.payment_reference && (
                             <div className="pt-2 flex flex-wrap justify-between items-center text-xs" style={{ borderTop: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
                               <span>Payment Reference: <strong style={{ color: 'var(--text-primary)' }}>{order.payment_reference}</strong></span>
-                              <span className="px-2 py-0.5 rounded-md font-semibold text-[10px]" style={{ backgroundColor: 'rgba(147,51,234,0.1)', color: 'var(--text-accent)' }}>Mock Card Payment</span>
+                              <span className="px-2 py-0.5 rounded-md font-semibold text-[10px]" style={{ backgroundColor: 'rgba(147,51,234,0.1)', color: 'var(--text-accent)' }}>Simulated Payment</span>
+                            </div>
+                          )}
+                          {['pending', 'processing'].includes(String(order.status).toLowerCase()) && (
+                            <div className="pt-3" style={{ borderTop: '1px solid var(--border-color)' }}>
+                              <button
+                                onClick={() => handleCancelOrder(order.id)}
+                                disabled={cancellingId === order.id}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-[0.98] disabled:opacity-50"
+                                style={{ backgroundColor: 'rgba(239,68,68,0.08)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}
+                              >
+                                <XCircle className="w-3.5 h-3.5" />
+                                {cancellingId === order.id ? 'Cancelling...' : 'Cancel Order'}
+                              </button>
                             </div>
                           )}
                         </div>

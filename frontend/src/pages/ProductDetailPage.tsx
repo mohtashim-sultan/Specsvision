@@ -4,10 +4,11 @@ import toast from "react-hot-toast";
 import { addCartItem } from "../api/cartApi";
 import { fetchProduct, fetchProducts } from "../api/productsApi";
 import ProductCard from "../components/ProductCard";
+import ProductReviews from "../components/ProductReviews";
 import { useAuth } from "../context/AuthContext";
-import type { Product } from "../types/api";
+import type { Product, ReviewSummary } from "../types/api";
 import { toStorefrontProduct } from "../utils/storefrontProduct";
-import { ShoppingBag, ChevronRight } from "lucide-react";
+import { ShoppingBag, ChevronRight, Star } from "lucide-react";
 import { API_BASE } from "../config/env";
 import { motion } from "framer-motion";
 
@@ -27,13 +28,31 @@ export default function ProductDetailPage() {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [activeImage, setActiveImage] = useState<string>("");
-  const [selectedColor, setSelectedColor] = useState("Matte Black");
+  const [selectedColor, setSelectedColor] = useState<string>("");
+  const [ratingSummary, setRatingSummary] = useState<ReviewSummary | null>(null);
 
-  const colors = [
-    { name: "Matte Black", hex: "#1A1A1A" },
-    { name: "Tortoise", hex: "#5C4033" },
-    { name: "Crystal Clear", hex: "#E8E8E8" },
-  ];
+  // Colors come from product data; only render the swatch UI when the product defines them.
+  const colors = product?.colors ?? [];
+  useEffect(() => {
+    if (colors.length > 0) setSelectedColor(colors[0].name);
+    else setSelectedColor("");
+    // colors is derived from product each render; key on product id + count to avoid a loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [product?.id, colors.length]);
+
+  const specs = useMemo(() => {
+    if (!product) return [];
+    const rows: { dt: string; dd: string }[] = [];
+    if (product.material) rows.push({ dt: "Material", dd: product.material });
+    if (product.lens_width_mm != null) rows.push({ dt: "Lens Width", dd: `${product.lens_width_mm} mm` });
+    if (product.bridge_mm != null) rows.push({ dt: "Bridge Size", dd: `${product.bridge_mm} mm` });
+    if (product.temple_mm != null) rows.push({ dt: "Temple Length", dd: `${product.temple_mm} mm` });
+    return rows;
+  }, [product]);
+
+  // Prefer the live summary (updated after posting a review) over the product's snapshot.
+  const avgRating = ratingSummary?.avg_rating ?? product?.avg_rating ?? null;
+  const reviewCount = ratingSummary?.review_count ?? product?.review_count ?? 0;
 
   const recommendedShapes = useMemo(() => {
     if (!product || !product.category) return "Oval, Square, Round";
@@ -126,9 +145,9 @@ export default function ProductDetailPage() {
     }
     setAdding(true);
     try {
-      await addCartItem(product.id, 1);
+      await addCartItem(product.id, 1, selectedColor || null);
       await refreshCart();
-      toast.success("Added to cart");
+      toast.success(selectedColor ? `Added to cart (${selectedColor})` : "Added to cart");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not add to cart");
     } finally {
@@ -209,10 +228,24 @@ export default function ProductDetailPage() {
 
           <div>
             <h1 className="text-3xl font-bold sm:text-4xl" style={{ color: 'var(--text-primary)' }}>{product.name}</h1>
+            {reviewCount > 0 ? (
+              <a href="#reviews" className="mt-2 inline-flex items-center gap-1.5 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                <span className="flex items-center gap-0.5 text-yellow-400">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <Star key={n} className="w-4 h-4 fill-current" style={{ color: n <= Math.round(avgRating ?? 0) ? '#facc15' : 'var(--border-color)' }} />
+                  ))}
+                </span>
+                <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{(avgRating ?? 0).toFixed(1)}</span>
+                <span style={{ color: 'var(--text-muted)' }}>· {reviewCount} review{reviewCount > 1 ? 's' : ''}</span>
+              </a>
+            ) : (
+              <p className="mt-2 text-sm" style={{ color: 'var(--text-muted)' }}>No reviews yet</p>
+            )}
             <p className="mt-3 text-2xl font-bold" style={{ color: 'var(--text-accent)' }}>{formatPrice(product.price)}</p>
           </div>
 
-          {/* Color swatches */}
+          {/* Color swatches (data-driven; hidden when the product has no color options) */}
+          {colors.length > 0 && (
           <div>
             <span className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>
               Selected Color: <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{selectedColor}</span>
@@ -235,30 +268,30 @@ export default function ProductDetailPage() {
               ))}
             </div>
           </div>
+          )}
 
           <p className="leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{product.description || product.sku}</p>
 
-          {/* Specifications */}
-          <div className="rounded-2xl p-5 shadow-sm" style={{ backgroundColor: 'var(--surface-bg)', border: '1px solid var(--border-color)' }}>
-            <h3 className="font-semibold text-sm pb-2 mb-3" style={{ color: 'var(--text-primary)', borderBottom: '1px solid var(--border-color)' }}>Frame Specifications</h3>
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-              {[
-                { dt: 'Material', dd: 'Acetate & Stainless Steel' },
-                { dt: 'Lens Width', dd: '54 mm' },
-                { dt: 'Bridge Size', dd: '18 mm' },
-                { dt: 'Temple Length', dd: '145 mm' },
-              ].map(({ dt, dd }) => (
-                <div key={dt} className="flex flex-col">
-                  <dt style={{ color: 'var(--text-muted)' }}>{dt}</dt>
-                  <dd className="font-medium" style={{ color: 'var(--text-primary)' }}>{dd}</dd>
-                </div>
-              ))}
-              <div className="flex flex-col col-span-2 mt-1">
-                <dt style={{ color: 'var(--text-muted)' }}>Lens Features</dt>
-                <dd className="font-medium" style={{ color: 'var(--text-accent)' }}>UV400 Protection & Blue Light Blocking</dd>
-              </div>
-            </dl>
-          </div>
+          {/* Specifications (data-driven; only shown when the product provides them) */}
+          {(specs.length > 0 || product.lens_features) && (
+            <div className="rounded-2xl p-5 shadow-sm" style={{ backgroundColor: 'var(--surface-bg)', border: '1px solid var(--border-color)' }}>
+              <h3 className="font-semibold text-sm pb-2 mb-3" style={{ color: 'var(--text-primary)', borderBottom: '1px solid var(--border-color)' }}>Frame Specifications</h3>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                {specs.map(({ dt, dd }) => (
+                  <div key={dt} className="flex flex-col">
+                    <dt style={{ color: 'var(--text-muted)' }}>{dt}</dt>
+                    <dd className="font-medium" style={{ color: 'var(--text-primary)' }}>{dd}</dd>
+                  </div>
+                ))}
+                {product.lens_features && (
+                  <div className="flex flex-col col-span-2 mt-1">
+                    <dt style={{ color: 'var(--text-muted)' }}>Lens Features</dt>
+                    <dd className="font-medium" style={{ color: 'var(--text-accent)' }}>{product.lens_features}</dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          )}
 
           {/* SKU / Stock */}
           <div className="rounded-xl px-4 py-3 text-sm" style={{ backgroundColor: 'var(--surface-bg)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}>
@@ -291,6 +324,11 @@ export default function ProductDetailPage() {
             </Link>
           </div>
         </motion.div>
+      </div>
+
+      {/* Ratings & Reviews */}
+      <div id="reviews" className="scroll-mt-24">
+        <ProductReviews productId={product.id} onSummaryChange={setRatingSummary} />
       </div>
 
       {/* Related Products */}

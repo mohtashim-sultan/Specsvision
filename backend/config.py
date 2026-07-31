@@ -1,15 +1,45 @@
+from decimal import Decimal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Placeholder secrets that must never be used in production. Startup fails on these when
+# environment == "production" (see main.lifespan).
+INSECURE_SECRETS: frozenset[str] = frozenset(
+    {
+        "change-me-in-production-use-openssl-rand-hex-32",
+        "change-me-use-openssl-rand-hex-32-in-production",
+    }
+)
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_name: str = "SpecsVision API"
+    environment: str = "development"
     secret_key: str = "change-me-in-production-use-openssl-rand-hex-32"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24 * 7
     database_url: str = "postgresql+psycopg://specsvision:specsvision@localhost:5432/specsvision"
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+
+    # Checkout pricing.
+    tax_rate: Decimal = Decimal("0.08")
+    shipping_fee: Decimal = Decimal("9.99")
+    free_shipping_threshold: Decimal = Decimal("100.00")
+
+    # Login rate limiting (attempts allowed per window, in seconds).
+    login_max_attempts: int = 10
+    login_window_seconds: int = 300
+
+    # Upload limits. 3-D try-on frames carry geometry plus baked textures and routinely
+    # exceed the image budget, so they get their own (larger) ceiling.
+    max_upload_bytes: int = 5 * 1024 * 1024  # 5 MB — images
+    max_model_upload_bytes: int = 32 * 1024 * 1024  # 32 MB — .glb / .gltf
+
+    @property
+    def secret_is_insecure(self) -> bool:
+        return self.secret_key in INSECURE_SECRETS
 
 
 settings = Settings()
