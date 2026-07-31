@@ -26,7 +26,25 @@ export default function CheckoutPage() {
   const [cardNumber, setCardNumber] = useState('');
   const [cardExpiry, setCardExpiry] = useState('');
   const [cardCvv, setCardCvv] = useState('');
+  const [couponCode, setCouponCode] = useState('');
   const [simulateSuccess, setSimulateSuccess] = useState(true);
+
+  // Mirrors backend pricing rules (see _compute_pricing in routes.py) for the summary preview.
+  const TAX_RATE = 0.08;
+  const FREE_SHIPPING_THRESHOLD = 100;
+  const SHIPPING_FEE = 9.99;
+  const KNOWN_COUPONS: Record<string, { kind: 'percent' | 'flat'; value: number }> = {
+    SPECS10: { kind: 'percent', value: 0.1 },
+    WELCOME5: { kind: 'flat', value: 5 },
+  };
+  const coupon = KNOWN_COUPONS[couponCode.trim().toUpperCase()];
+  const discount = coupon
+    ? Math.min(coupon.kind === 'percent' ? subtotal * coupon.value : coupon.value, subtotal)
+    : 0;
+  const taxable = subtotal - discount;
+  const tax = taxable * TAX_RATE;
+  const shipping = subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE;
+  const total = taxable + tax + shipping;
 
   useEffect(() => {
     if (!isAuthenticated) { setLoading(false); return; }
@@ -51,19 +69,30 @@ export default function CheckoutPage() {
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     setPlacingOrder(true);
-    if (!simulateSuccess) {
-      setTimeout(() => {
-        toast.error("Simulated Payment Error: Your transaction was declined by the bank.");
-        setPlacingOrder(false);
-      }, 1500);
-      return;
-    }
     try {
-      const res = await checkoutCart();
-      toast.success("Payment verified! Order placed successfully.");
+      const res = await checkoutCart({
+        shipping: {
+          full_name: fullName,
+          address,
+          city,
+          state,
+          zip_code: zip,
+          email,
+          phone,
+        },
+        payment: {
+          card_number: cardNumber.replace(/\s/g, ''),
+          card_expiry: cardExpiry,
+          card_cvv: cardCvv,
+          simulate_success: simulateSuccess,
+        },
+        coupon_code: couponCode.trim() ? couponCode.trim() : null,
+      });
+      toast.success("Payment approved! Order placed successfully.");
       await refreshCart();
       navigate(`/order-success/${res.order_id}`);
     } catch (err) {
+      // Backend returns 402 for a simulated decline / expired card, 400 for a bad coupon, etc.
       toast.error(err instanceof Error ? err.message : "Failed to complete checkout");
       setPlacingOrder(false);
     }
@@ -244,6 +273,21 @@ export default function CheckoutPage() {
               </div>
             </div>
 
+            {/* Coupon */}
+            <div className="pt-4 space-y-2" style={{ borderTop: '1px solid var(--border-color)' }}>
+              <label className="block text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-accent)' }}>Coupon Code</label>
+              <div className="relative">
+                <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                <input type="text" value={couponCode} onChange={(e) => setCouponCode(e.target.value.toUpperCase())} placeholder="e.g. SPECS10"
+                  className="w-full rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none transition-all focus:ring-2 focus:ring-purple-500/30" style={inputStyle} />
+              </div>
+              {couponCode.trim() && (
+                <p className="text-xs font-semibold" style={{ color: discount > 0 ? '#22c55e' : '#ef4444' }}>
+                  {discount > 0 ? `Coupon applied — you save $${discount.toFixed(2)}` : 'Unknown coupon code'}
+                </p>
+              )}
+            </div>
+
             {/* Simulation Controls */}
             <div className="pt-4 space-y-3" style={{ borderTop: '1px solid var(--border-color)' }}>
               <span className="text-xs font-bold uppercase tracking-wider block" style={{ color: 'var(--text-muted)' }}>Gateway Simulator</span>
@@ -297,13 +341,25 @@ export default function CheckoutPage() {
                 <span style={{ color: 'var(--text-secondary)' }}>Subtotal</span>
                 <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>${subtotal.toFixed(2)}</span>
               </div>
+              {discount > 0 && (
+                <div className="flex justify-between">
+                  <span style={{ color: 'var(--text-secondary)' }}>Discount</span>
+                  <span className="font-semibold" style={{ color: '#22c55e' }}>-${discount.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span style={{ color: 'var(--text-secondary)' }}>Tax (8%)</span>
+                <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>${tax.toFixed(2)}</span>
+              </div>
               <div className="flex justify-between">
                 <span style={{ color: 'var(--text-secondary)' }}>Shipping</span>
-                <span className="font-semibold" style={{ color: '#22c55e' }}>Free</span>
+                <span className="font-semibold" style={{ color: shipping === 0 ? '#22c55e' : 'var(--text-primary)' }}>
+                  {shipping === 0 ? 'Free' : `$${shipping.toFixed(2)}`}
+                </span>
               </div>
               <div className="pt-3 flex justify-between items-center" style={{ borderTop: '1px solid var(--border-color)' }}>
                 <span className="font-bold" style={{ color: 'var(--text-primary)' }}>Total</span>
-                <span className="text-xl font-bold" style={{ color: 'var(--text-accent)' }}>${subtotal.toFixed(2)}</span>
+                <span className="text-xl font-bold" style={{ color: 'var(--text-accent)' }}>${total.toFixed(2)}</span>
               </div>
             </div>
 

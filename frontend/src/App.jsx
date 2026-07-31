@@ -3,6 +3,8 @@ import { Routes, Route, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { WishlistProvider } from './context/WishlistContext';
+import { CompareProvider } from './context/CompareContext';
 import Header from './components/layout/Header';
 import Footer from './components/layout/Footer';
 import Home from './components/Home';
@@ -21,18 +23,29 @@ import AdminDashboardPage from './pages/admin/AdminDashboardPage';
 import AdminProductsPage from './pages/admin/AdminProductsPage';
 import AdminProductEditPage from './pages/admin/AdminProductEditPage';
 import AdminOrdersPage from './pages/admin/AdminOrdersPage';
+import AdminUsersPage from './pages/admin/AdminUsersPage';
+import AdminAnalyticsPage from './pages/admin/AdminAnalyticsPage';
 
 // New features
 import UserProfilePage from './pages/UserProfilePage';
 import CheckoutPage from './pages/CheckoutPage';
 import OrderSuccessPage from './pages/OrderSuccessPage';
+import WishlistPage from './pages/WishlistPage';
+import ComparePage from './pages/ComparePage';
 
 function AppContent() {
   const location = useLocation();
   const isAdmin = location.pathname.startsWith('/admin');
+  // The try-on studio is a full-viewport experience: it sizes itself to fill the space
+  // below the header, so a footer underneath pushes the document past the viewport and
+  // makes the page scroll — which on mobile hid the capture bar and the frame carousel.
+  const isImmersive = location.pathname.startsWith('/try-on');
 
   return (
-    <div className="min-h-screen" style={{ background: 'linear-gradient(to bottom right, var(--bg-page-start), var(--bg-page-end))' }}>
+    <div
+      className={isImmersive ? 'h-[100dvh] overflow-hidden' : 'min-h-screen'}
+      style={{ background: 'linear-gradient(to bottom right, var(--bg-page-start), var(--bg-page-end))' }}
+    >
       {!isAdmin && <Header />}
       <Routes>
         <Route path="/" element={<Home />} />
@@ -46,6 +59,8 @@ function AppContent() {
         <Route path="/about" element={<About />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/profile" element={<UserProfilePage />} />
+        <Route path="/wishlist" element={<WishlistPage />} />
+        <Route path="/compare" element={<ComparePage />} />
         <Route path="/checkout" element={<CheckoutPage />} />
         <Route path="/order-success/:orderId" element={<OrderSuccessPage />} />
         <Route
@@ -62,9 +77,11 @@ function AppContent() {
           <Route path="products" element={<AdminProductsPage />} />
           <Route path="products/:productId" element={<AdminProductEditPage />} />
           <Route path="orders" element={<AdminOrdersPage />} />
+          <Route path="users" element={<AdminUsersPage />} />
+          <Route path="analytics" element={<AdminAnalyticsPage />} />
         </Route>
       </Routes>
-      {!isAdmin && <Footer />}
+      {!isAdmin && !isImmersive && <Footer />}
       <Toaster
         position="top-right"
         toastOptions={{
@@ -98,7 +115,11 @@ export default function App() {
   return (
     <ThemeProvider>
     <AuthProvider>
-      <AppContent />
+      <WishlistProvider>
+      <CompareProvider>
+        <AppContent />
+      </CompareProvider>
+      </WishlistProvider>
     </AuthProvider>
     </ThemeProvider>
   );
