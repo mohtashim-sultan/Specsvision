@@ -6,14 +6,49 @@ import TryOnViewer, { type TryOnStatus, type TryOnViewerHandle } from "../compon
 import { MaterialIcon } from "../components/ui/MaterialIcon";
 import type { Product } from "../types/api";
 import { displayImageUrl } from "../utils/storefrontProduct";
+import { isBestFit, SHAPE_GUIDE, type FaceShape } from "../components/ar/faceShape";
 import { API_BASE } from "../config/env";
+
+// ── Types & Defaults ──────────────────────────────────────────────────────────
+
+interface Adjustments {
+  scale: number;
+  templeLength: number; // Z-scale multiplier
+  faceStretch: number;  // Y-stretch multiplier (beauty/fit optimization)
+  zoom: number;         // Camera crop (1 = fill the screen, >1 = tighter crop on the face)
+  x: number;
+  y: number;
+  z: number;
+  rx: number; // Pitch in degrees
+  ry: number; // Yaw in degrees
+  rz: number; // Roll in degrees
+}
+
+// Placement (seat height, forward offset, orientation, temple length) is now handled by the
+// landmark head-pose engine + auto temple-fit in TryOnViewer (see the `AR` constants there).
+// These sliders are therefore ZEROED nudges on top of that baseline — the frame already sits
+// correctly by default. Only per-category scale carries a small default. faceStretch/zoom are
+// independent camera-feed effects and are left as-is.
+// zoom 1.0 = the camera feed exactly fills the studio (no letterboxing). It used to default
+// to 0.82, which shrank the composited feed and left black bars on every screen — worst on
+// phones, where it pushed the face into a small box. faceStretch 1.0 keeps the feed
+// undistorted; both remain user-adjustable.
+const BASELINE: Adjustments = { scale: 1.0, templeLength: 1.0, faceStretch: 1.0, zoom: 1.0, x: 0.0, y: 0.0, z: 0.0, rx: 0.0, ry: 0.0, rz: 0.0 };
+const DEFAULT_ADJUSTMENTS: Record<string, Adjustments> = {
+  default:  { ...BASELINE },
+  wayfarer: { ...BASELINE },
+  aviator:  { ...BASELINE, scale: 1.02 },
+  cateye:   { ...BASELINE, scale: 0.98 },
+  round:    { ...BASELINE },
+  oval:     { ...BASELINE },
+};
 
 function statusLabel(s: TryOnStatus): string {
   switch (s) {
     case "loading":  return "Starting…";
     case "ready":    return "Ready";
     case "tracking": return "Tracking ✓";
-    case "no-face":  return "No face";
+    case "no-face":  return "No Face Detected";
     case "error":    return "Error";
     default:         return "";
   }
@@ -30,17 +65,23 @@ export default function VirtualTryOnPage() {
   const navigate   = useNavigate();
   const viewerRef  = useRef<TryOnViewerHandle>(null);
 
-  const [products,       setProducts]       = useState<Product[]>([]);
-  const [loadingCatalog, setLoadingCatalog] = useState(true);
-  const [selectedId,     setSelectedId]     = useState<number | null>(null);
-  const [arStatus,       setArStatus]       = useState<TryOnStatus>("loading");
-  const [hasConsent,     setHasConsent]     = useState(() =>
+  // Catalog & UI States
+  const [products,           setProducts]           = useState<Product[]>([]);
+  const [loadingCatalog,     setLoadingCatalog]     = useState(true);
+  const [selectedId,         setSelectedId]         = useState<number | null>(null);
+  const [selectedCategory,   setSelectedCategory]   = useState<string>("All");
+  const [arStatus,           setArStatus]           = useState<TryOnStatus>("loading");
+  const [detectedShape,      setDetectedShape]      = useState<FaceShape | null>(null);
+  const [hasConsent,         setHasConsent]         = useState(() =>
     localStorage.getItem("specsvision_cam_consent") === "true",
   );
 
-  const [scaleOffset,    setScaleOffset]    = useState(1.0);
-  const [showAdjust,     setShowAdjust]     = useState(false);
+  // Adjustments & Presets States
+  const [showAdjust,         setShowAdjust]         = useState(false);
+  const [adjustTab,          setAdjustTab]          = useState<"position" | "rotation" | "scale">("position");
+  const [adjustments,        setAdjustments]        = useState<Adjustments>(DEFAULT_ADJUSTMENTS.default);
 
+  // Fetch Products
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -57,6 +98,7 @@ export default function VirtualTryOnPage() {
     return () => { cancelled = true; };
   }, []);
 
+  // Sync selectedId with Route Params
   useEffect(() => {
     if (products.length === 0) return;
     const fromRoute = routeProductId ? parseInt(routeProductId, 10) : NaN;
@@ -68,6 +110,53 @@ export default function VirtualTryOnPage() {
   }, [products, routeProductId, selectedId]);
 
   const selected = useMemo(() => products.find((p) => p.id === selectedId) ?? null, [products, selectedId]);
+
+  const activeBase = useMemo(() => {
+    const cat = selected?.category?.toLowerCase().trim() || "default";
+    return DEFAULT_ADJUSTMENTS[cat] || DEFAULT_ADJUSTMENTS.default;
+  }, [selected]);
+
+  // Load adjustments for the selected product (or fall back to category defaults)
+  useEffect(() => {
+    if (selectedId === null) return;
+    const getInitialAdjustments = (): Adjustments => {
+      const saved = localStorage.getItem(`specsvision_adj_v12_${selectedId}`);
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          console.error("Failed to parse saved adjustments", e);
+        }
+      }
+      const cat = selected?.category?.toLowerCase().trim() || "default";
+      return DEFAULT_ADJUSTMENTS[cat] || DEFAULT_ADJUSTMENTS.default;
+    };
+    setAdjustments(getInitialAdjustments());
+  }, [selectedId, selected]);
+
+  // Extract unique categories from products
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    products.forEach((p) => {
+      if (p.category) set.add(p.category);
+    });
+    return ["All", ...Array.from(set)];
+  }, [products]);
+
+  // Filter products by selected category, then (once a face shape is detected) float the
+  // recommended "best fit" frames to the top so the most flattering options come first.
+  const filteredProducts = useMemo(() => {
+    const base =
+      selectedCategory === "All"
+        ? products
+        : products.filter((p) => p.category?.toLowerCase() === selectedCategory.toLowerCase());
+    if (!detectedShape) return base;
+    return [...base].sort((a, b) => {
+      const af = isBestFit(a.category, detectedShape) ? 0 : 1;
+      const bf = isBestFit(b.category, detectedShape) ? 0 : 1;
+      return af - bf;
+    });
+  }, [products, selectedCategory, detectedShape]);
 
   const frameSrc = useMemo(() => {
     if (selected?.front_view?.trim()) {
@@ -94,20 +183,143 @@ export default function VirtualTryOnPage() {
 
   const handleStatusChange = useCallback((s: TryOnStatus) => setArStatus(s), []);
 
-  const statusColor = arStatus === "tracking" ? "bg-green-400" : arStatus === "error" ? "bg-red-400" : "bg-amber-400";
+  // Update a single adjustment value and save to LocalStorage
+  const updateAdjustment = (key: keyof Adjustments, value: number) => {
+    setAdjustments((prev) => {
+      const next = { ...prev, [key]: value };
+      if (selectedId !== null) {
+        localStorage.setItem(`specsvision_adj_v12_${selectedId}`, JSON.stringify(next));
+      }
+      return next;
+    });
+  };
+
+  // Apply common calibration presets
+  const applyPreset = (presetType: "standard" | "nose-lift" | "nose-lower" | "wide" | "narrow") => {
+    const cat = selected?.category?.toLowerCase().trim() || "default";
+    const base = DEFAULT_ADJUSTMENTS[cat] || DEFAULT_ADJUSTMENTS.default;
+
+    let next = { ...base };
+    switch (presetType) {
+      case "nose-lift":
+        next.y += 0.015;
+        next.z += 0.005;
+        next.rx -= 2.0;
+        break;
+      case "nose-lower":
+        next.y -= 0.015;
+        next.z -= 0.005;
+        next.rx += 2.0;
+        break;
+      case "wide":
+        next.scale = Math.min(1.30, next.scale * 1.05);
+        break;
+      case "narrow":
+        next.scale = Math.max(0.70, next.scale * 0.95);
+        break;
+      case "standard":
+      default:
+        break;
+    }
+    setAdjustments(next);
+    if (selectedId !== null) {
+      localStorage.setItem(`specsvision_adj_v12_${selectedId}`, JSON.stringify(next));
+    }
+    toast.success(`Preset "${presetType}" applied!`);
+  };
+
+  // Reset current product's adjustments to category defaults
+  const resetAllAdjustments = () => {
+    const cat = selected?.category?.toLowerCase().trim() || "default";
+    const next = DEFAULT_ADJUSTMENTS[cat] || DEFAULT_ADJUSTMENTS.default;
+    setAdjustments(next);
+    if (selectedId !== null) {
+      localStorage.removeItem(`specsvision_adj_v12_${selectedId}`);
+    }
+    toast.success("Adjustments reset to defaults!");
+  };
+
+  const statusColor = arStatus === "tracking" ? "bg-emerald-400" : arStatus === "error" ? "bg-red-400" : "bg-amber-400";
 
   return (
-    <main className="flex h-[calc(100vh-5rem)] overflow-hidden bg-slate-950 text-white md:flex-row flex-col tryon-studio">
+    <main className="flex h-[calc(100dvh-3.5rem)] sm:h-[calc(100dvh-4rem)] overflow-hidden bg-slate-950 text-white md:flex-row flex-col tryon-studio">
+      <style>{`
+        /* The studio owns the space below the header. Everything here measures in dvh so
+           the shell and its children agree as the mobile address bar shows/hides — mixing
+           svh on the parent with dvh on children let the carousel claim more room than the
+           parent had allocated, which shifted the layout on every scroll. */
+        .tryon-studio { min-height: 0; }
+        /* The category <select> is chrome, not a form field: exempt it from the global
+           16px-minimum rule that exists to stop iOS zooming on input focus. */
+        .tryon-studio select.tryon-chrome-select { font-size: 11px !important; }
+        .safe-b { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+        .safe-b-sm { padding-bottom: max(0.5rem, env(safe-area-inset-bottom)); }
+        @keyframes scan {
+          0% { transform: translateY(-10%); opacity: 0.2; }
+          50% { transform: translateY(90%); opacity: 0.8; }
+          100% { transform: translateY(-10%); opacity: 0.2; }
+        }
+        .animate-scan {
+          animation: scan 4s ease-in-out infinite;
+        }
+        /* Frosted, gradient-edged surface for the premium control chrome. */
+        .glass-chrome {
+          background: linear-gradient(135deg, rgba(15,23,42,0.82), rgba(10,10,20,0.72));
+          border: 1px solid rgba(255,255,255,0.10);
+          box-shadow: 0 8px 32px -6px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06);
+          -webkit-backdrop-filter: blur(16px);
+          backdrop-filter: blur(16px);
+        }
+        .grab-handle {
+          width: 40px; height: 4px; border-radius: 9999px;
+          background: rgba(255,255,255,0.22);
+          margin: 0 auto 10px;
+        }
+        @keyframes floatIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .float-in { animation: floatIn 0.35s ease-out both; }
+        .scrollbar-none::-webkit-scrollbar {
+          display: none;
+        }
+        .scrollbar-none {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 5px;
+          height: 5px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: rgba(15, 23, 42, 0.2);
+          border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(147, 51, 234, 0.4);
+          border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: rgba(147, 51, 234, 0.7);
+        }
+      `}</style>
 
+      {/* AR Camera Section */}
       <section className="relative flex-1 min-h-0 bg-slate-950 overflow-hidden">
-
         {hasConsent ? (
           <div className="absolute inset-0">
             <TryOnViewer
               ref={viewerRef}
               frameSrc={frameSrc}
               onStatusChange={handleStatusChange}
-              scaleOffset={scaleOffset}
+              onFaceShapeDetect={(s) => setDetectedShape((s as FaceShape) ?? null)}
+              scaleOffset={adjustments.scale}
+              templeLength={adjustments.templeLength}
+              faceStretch={adjustments.faceStretch}
+              cameraZoom={adjustments.zoom}
+              positionX={adjustments.x}
+              positionY={adjustments.y}
+              positionZ={adjustments.z}
+              rotationX={adjustments.rx}
+              rotationY={adjustments.ry}
+              rotationZ={adjustments.rz}
             />
           </div>
         ) : (
@@ -145,107 +357,572 @@ export default function VirtualTryOnPage() {
 
         {hasConsent && (
           <>
-            <div className="pointer-events-none absolute left-4 top-4 rounded-2xl border border-white/10 bg-black/50 px-4 py-3 backdrop-blur-md shadow-xl max-w-[220px]">
-              <span className="block text-[9px] font-bold uppercase tracking-widest text-purple-400">Now Trying</span>
-              <h2 className="mt-0.5 truncate text-sm font-bold text-white leading-tight">
-                {selected?.name ?? "Select a frame"}
-              </h2>
-              {selected && (
-                <p className="mt-0.5 text-[10px] text-slate-400 truncate">
-                  {selected.category} · {formatPrice(selected.price)}
-                </p>
+            {/* Holographic Target Scanning Guides when not tracking */}
+            {(arStatus === "loading" || arStatus === "no-face") && (
+              <div className="absolute inset-0 pointer-events-none z-10 flex items-center justify-center">
+                <div className="absolute inset-16 md:inset-28 flex flex-col justify-between border border-purple-500/5 rounded-3xl">
+                  <div className="flex justify-between">
+                    <div className="w-10 h-10 border-t-2 border-l-2 border-purple-500/50 rounded-tl-2xl animate-pulse" />
+                    <div className="w-10 h-10 border-t-2 border-r-2 border-purple-500/50 rounded-tr-2xl animate-pulse" />
+                  </div>
+                  
+                  {/* Glowing Laser Scan Line */}
+                  <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-purple-500/60 to-transparent shadow-[0_0_12px_rgba(168,85,247,0.7)] animate-scan" />
+                  
+                  <div className="flex justify-between">
+                    <div className="w-10 h-10 border-b-2 border-l-2 border-purple-500/50 rounded-bl-2xl animate-pulse" />
+                    <div className="w-10 h-10 border-b-2 border-r-2 border-purple-500/50 rounded-br-2xl animate-pulse" />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Info overlays — a flow-stacked column so cards can never collide, and capped
+                against the viewport width so they don't blanket the face on small phones.
+                (The face-shape card used to be pinned at a hard-coded top-[104px], which
+                overlapped whenever the product name wrapped to two lines.) */}
+            <div className="pointer-events-none absolute left-2.5 top-2.5 sm:left-4 sm:top-4 z-10 flex max-w-[52vw] flex-col gap-2 sm:max-w-[240px]">
+              <div className="rounded-2xl border border-white/10 bg-black/60 px-3 py-2 backdrop-blur-md shadow-xl sm:px-4 sm:py-3">
+                <span className="block text-[9px] font-bold uppercase tracking-widest text-purple-400">Now Trying</span>
+                <h2 className="mt-0.5 truncate text-xs font-bold text-white leading-tight sm:text-sm">
+                  {selected?.name ?? "Select a frame"}
+                </h2>
+                {selected && (
+                  <p className="mt-0.5 text-[10px] text-slate-400 truncate">
+                    {selected.category} · {formatPrice(selected.price)}
+                  </p>
+                )}
+              </div>
+
+              {/* Detected face shape + fit guidance. The blurb is desktop-only — on a phone
+                  the card would otherwise cover a third of the camera view. */}
+              {detectedShape && (
+                <div className="rounded-2xl border border-purple-400/20 bg-black/60 px-3 py-2 backdrop-blur-md shadow-xl animate-in fade-in slide-in-from-left-3 duration-300 sm:px-4 sm:py-3">
+                  <div className="flex items-center gap-1.5">
+                    <MaterialIcon name="face" className="!text-sm text-purple-300" />
+                    <span className="text-[9px] font-bold uppercase tracking-widest text-purple-400">Face Shape</span>
+                  </div>
+                  <p className="mt-0.5 text-xs font-bold text-white leading-tight sm:text-sm">{detectedShape}</p>
+                  <p className="mt-1 hidden text-[10px] text-slate-300 leading-snug sm:block">{SHAPE_GUIDE[detectedShape].blurb}</p>
+                  <p className="mt-1 text-[10px] leading-snug text-slate-400 sm:mt-1.5">
+                    <span className="text-purple-300 font-semibold">Best fit:</span>{" "}
+                    {SHAPE_GUIDE[detectedShape].recommend.slice(0, 3).join(", ")}
+                  </p>
+                </div>
               )}
             </div>
 
-            <div className="absolute right-4 top-4 flex items-center gap-1.5 rounded-full bg-black/50 px-3 py-1.5 backdrop-blur-md border border-white/10">
-              <span className={`h-1.5 w-1.5 rounded-full ${statusColor} ${arStatus === "tracking" ? "animate-pulse" : ""}`} />
-              <span className="text-[9px] font-bold uppercase tracking-wider">{statusLabel(arStatus)}</span>
+            {/* Status Pills */}
+            <div className="absolute right-2.5 top-2.5 sm:right-4 sm:top-4 z-10 flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 backdrop-blur-md border border-white/10 shadow-lg sm:px-3.5">
+              <span className={`h-2 w-2 rounded-full ${statusColor} ${arStatus === "tracking" ? "animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.7)]" : ""}`} />
+              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-200">{statusLabel(arStatus)}</span>
             </div>
 
+            {/* Scrim behind the mobile bottom sheet — without it taps landed on the frame
+                carousel underneath, and there was no way to dismiss but the small ✕. */}
             {showAdjust && (
-              <div className="absolute left-4 bottom-20 z-20 w-64 rounded-2xl border border-white/10 bg-slate-950/95 p-4 shadow-2xl backdrop-blur-xl">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-800 mb-3">
-                  <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-purple-400">
-                    <MaterialIcon name="tune" className="!text-sm" />
-                    Fine-tune Fit
+              <div
+                role="presentation"
+                onClick={() => setShowAdjust(false)}
+                className="fixed inset-0 z-20 bg-black/50 backdrop-blur-[2px] animate-in fade-in duration-200 md:hidden"
+              />
+            )}
+
+            {/* Glassmorphic Settings Drawer (Adjustments) */}
+            {showAdjust && (
+              <div className="glass-chrome fixed md:absolute bottom-0 left-0 right-0 md:left-4 md:top-4 md:bottom-4 z-30 md:z-20 w-full md:w-[340px] h-[58dvh] md:h-auto rounded-t-[32px] md:rounded-3xl px-5 pt-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] md:pb-5 shadow-[0_-10px_40px_rgba(0,0,0,0.85)] md:shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom md:slide-in-from-left-5 duration-300 md:duration-200">
+                {/* Grab bar for mobile bottom sheet */}
+                <div className="w-12 h-1 bg-slate-850 rounded-full mx-auto mb-3.5 md:hidden shrink-0" />
+
+                <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 shrink-0">
+                  <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-purple-400">
+                    <MaterialIcon name="tune" className="!text-base" />
+                    Virtual Fit Adjustments
                   </span>
-                  <button type="button" onClick={() => setShowAdjust(false)}
-                    className="rounded-full p-0.5 text-slate-400 hover:bg-slate-800">
-                    <MaterialIcon name="close" className="!text-sm" />
+                  <button
+                    type="button"
+                    onClick={() => setShowAdjust(false)}
+                    className="rounded-full p-1 text-slate-400 hover:bg-slate-850 hover:text-white transition-colors"
+                  >
+                    <MaterialIcon name="close" className="!text-base" />
                   </button>
                 </div>
-                <div className="space-y-3 text-xs">
-                  <div>
-                    <div className="flex justify-between mb-1">
-                      <span className="text-slate-400">Frame Size</span>
-                      <span className="text-purple-400 font-bold">{Math.round(scaleOffset * 100)}%</span>
-                    </div>
-                    <input type="range" min="0.70" max="1.30" step="0.01" value={scaleOffset}
-                      onChange={(e) => setScaleOffset(parseFloat(e.target.value))}
-                      className="w-full h-1 accent-purple-500 cursor-pointer" />
-                  </div>
-                  <button type="button" onClick={() => setScaleOffset(1.0)}
-                    className="w-full mt-1 rounded-xl border border-slate-700 py-1.5 text-[10px] font-semibold text-slate-300 hover:bg-slate-800 transition-colors">
-                    Reset to Default
+
+                {/* Adjustment Tabs */}
+                <div className="grid grid-cols-3 gap-1 my-4 bg-slate-900/60 p-1 rounded-2xl shrink-0 border border-slate-800/50">
+                  {(["position", "rotation", "scale"] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      onClick={() => setAdjustTab(tab)}
+                      className={`py-2 text-[9px] font-bold uppercase tracking-wider rounded-xl transition-all ${
+                        adjustTab === tab
+                          ? "bg-gradient-to-r from-purple-600 to-pink-500 text-white shadow-lg"
+                          : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      {tab === "scale" ? "Size" : tab}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Tab Content (Scrollable) */}
+                <div className="flex-1 overflow-y-auto space-y-5 pr-1 py-1 custom-scrollbar min-h-0 text-xs">
+                  {adjustTab === "position" && (
+                    <>
+                      {/* Position Y: Height (Up / Down) */}
+                      <div>
+                        <div className="flex justify-between mb-1.5">
+                          <span className="text-slate-300 font-medium">Height (Up / Down)</span>
+                          <span className="text-purple-400 font-bold font-mono">
+                            {adjustments.y > activeBase.y ? "+" : ""}
+                            {Math.round((adjustments.y - activeBase.y) * 1000)} mm
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="range"
+                            min="-0.15"
+                            max="0.02"
+                            step="0.001"
+                            value={adjustments.y}
+                            onChange={(e) => updateAdjustment("y", parseFloat(e.target.value))}
+                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              updateAdjustment("y", activeBase.y);
+                            }}
+                            className="text-[10px] text-slate-500 hover:text-purple-400 transition-colors font-semibold"
+                          >
+                            Reset
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Position Z: Depth (In / Out) */}
+                      <div>
+                        <div className="flex justify-between mb-1.5">
+                          <span className="text-slate-300 font-medium">Depth (In / Out)</span>
+                          <span className="text-purple-400 font-bold font-mono">
+                            {adjustments.z > activeBase.z ? "+" : ""}
+                            {Math.round((adjustments.z - activeBase.z) * 1000)} mm
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="range"
+                            min="-0.05"
+                            max="0.10"
+                            step="0.001"
+                            value={adjustments.z}
+                            onChange={(e) => updateAdjustment("z", parseFloat(e.target.value))}
+                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              updateAdjustment("z", activeBase.z);
+                            }}
+                            className="text-[10px] text-slate-500 hover:text-purple-400 transition-colors font-semibold"
+                          >
+                            Reset
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Position X: Centering (Left / Right) */}
+                      <div>
+                        <div className="flex justify-between mb-1.5">
+                          <span className="text-slate-300 font-medium">Centering (Left / Right)</span>
+                          <span className="text-purple-400 font-bold font-mono">
+                            {adjustments.x > activeBase.x ? "+" : ""}
+                            {Math.round((adjustments.x - activeBase.x) * 1000)} mm
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="range"
+                            min="-0.04"
+                            max="0.04"
+                            step="0.001"
+                            value={adjustments.x}
+                            onChange={(e) => updateAdjustment("x", parseFloat(e.target.value))}
+                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => updateAdjustment("x", activeBase.x)}
+                            className="text-[10px] text-slate-500 hover:text-purple-400 transition-colors font-semibold"
+                          >
+                            Reset
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {adjustTab === "rotation" && (
+                    <>
+                      {/* Pitch: Tilt Up / Down */}
+                      <div>
+                        <div className="flex justify-between mb-1.5">
+                          <span className="text-slate-300 font-medium">Tilt (Pitch)</span>
+                          <span className="text-purple-400 font-bold font-mono">
+                            {adjustments.rx > activeBase.rx ? "+" : ""}
+                            {(adjustments.rx - activeBase.rx).toFixed(1)}°
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="range"
+                            min="-15"
+                            max="15"
+                            step="0.5"
+                            value={adjustments.rx}
+                            onChange={(e) => updateAdjustment("rx", parseFloat(e.target.value))}
+                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              updateAdjustment("rx", activeBase.rx);
+                            }}
+                            className="text-[10px] text-slate-500 hover:text-purple-400 transition-colors font-semibold"
+                          >
+                            Reset
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Yaw: Turn Left / Right */}
+                      <div>
+                        <div className="flex justify-between mb-1.5">
+                          <span className="text-slate-300 font-medium">Turn (Yaw)</span>
+                          <span className="text-purple-400 font-bold font-mono">
+                            {adjustments.ry > activeBase.ry ? "+" : ""}
+                            {(adjustments.ry - activeBase.ry).toFixed(1)}°
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="range"
+                            min="-15"
+                            max="15"
+                            step="0.5"
+                            value={adjustments.ry}
+                            onChange={(e) => updateAdjustment("ry", parseFloat(e.target.value))}
+                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => updateAdjustment("ry", activeBase.ry)}
+                            className="text-[10px] text-slate-500 hover:text-purple-400 transition-colors font-semibold"
+                          >
+                            Reset
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Roll: Slant Clockwise / Counter */}
+                      <div>
+                        <div className="flex justify-between mb-1.5">
+                          <span className="text-slate-300 font-medium">Slant (Roll)</span>
+                          <span className="text-purple-400 font-bold font-mono">
+                            {adjustments.rz > activeBase.rz ? "+" : ""}
+                            {(adjustments.rz - activeBase.rz).toFixed(1)}°
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="range"
+                            min="-15"
+                            max="15"
+                            step="0.5"
+                            value={adjustments.rz}
+                            onChange={(e) => updateAdjustment("rz", parseFloat(e.target.value))}
+                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => updateAdjustment("rz", activeBase.rz)}
+                            className="text-[10px] text-slate-500 hover:text-purple-400 transition-colors font-semibold"
+                          >
+                            Reset
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {adjustTab === "scale" && (
+                    <>
+                      {/* Scale: Size multiplier */}
+                      <div className="pb-3 border-b border-slate-800/80">
+                        <div className="flex justify-between mb-1.5">
+                          <span className="text-slate-300 font-medium">Frame Size</span>
+                          <span className="text-purple-400 font-bold font-mono">
+                            {Math.round(adjustments.scale * 100)}%
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="range"
+                            min="0.70"
+                            max="1.30"
+                            step="0.01"
+                            value={adjustments.scale}
+                            onChange={(e) => updateAdjustment("scale", parseFloat(e.target.value))}
+                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              updateAdjustment("scale", activeBase.scale);
+                            }}
+                            className="text-[10px] text-slate-500 hover:text-purple-400 transition-colors font-semibold"
+                          >
+                            Reset
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Temple Length: Arm depth multiplier */}
+                      <div className="pb-3 border-b border-slate-800/80 mt-4">
+                        <div className="flex justify-between mb-1.5">
+                          <span className="text-slate-300 font-medium">Temple Length (Arms)</span>
+                          <span className="text-purple-400 font-bold font-mono">
+                            {Math.round(adjustments.templeLength * 100)}%
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="range"
+                            min="0.60"
+                            max="3.50"
+                            step="0.01"
+                            value={adjustments.templeLength}
+                            onChange={(e) => updateAdjustment("templeLength", parseFloat(e.target.value))}
+                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              updateAdjustment("templeLength", activeBase.templeLength);
+                            }}
+                            className="text-[10px] text-slate-500 hover:text-purple-400 transition-colors font-semibold"
+                          >
+                            Reset
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Camera Zoom: shrinks the whole feed so the face looks smaller */}
+                      <div className="pb-3 border-b border-slate-800/80 mt-4">
+                        <div className="flex justify-between mb-1.5">
+                          <span className="text-slate-300 font-medium">Camera Zoom</span>
+                          <span className="text-purple-400 font-bold font-mono">
+                            {Math.round(adjustments.zoom * 100)}%
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="range"
+                            min="1.00"
+                            max="1.60"
+                            step="0.01"
+                            value={adjustments.zoom}
+                            onChange={(e) => updateAdjustment("zoom", parseFloat(e.target.value))}
+                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => updateAdjustment("zoom", activeBase.zoom)}
+                            className="text-[10px] text-slate-500 hover:text-purple-400 transition-colors font-semibold"
+                          >
+                            Reset
+                          </button>
+                        </div>
+                        <p className="text-[9px] text-slate-500 mt-1">100% fills the screen. Higher crops in closer on your face.</p>
+                      </div>
+
+                      {/* Face Shape Stretch: Y-axis vertical beauty scaler */}
+                      <div className="pb-3 border-b border-slate-800/80 mt-4">
+                        <div className="flex justify-between mb-1.5">
+                          <span className="text-slate-300 font-medium">Camera Face Stretch</span>
+                          <span className="text-purple-400 font-bold font-mono">
+                            {Math.round(adjustments.faceStretch * 100)}%
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="range"
+                            min="0.90"
+                            max="1.10"
+                            step="0.005"
+                            value={adjustments.faceStretch}
+                            onChange={(e) => updateAdjustment("faceStretch", parseFloat(e.target.value))}
+                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              updateAdjustment("faceStretch", activeBase.faceStretch);
+                            }}
+                            className="text-[10px] text-slate-500 hover:text-purple-400 transition-colors font-semibold"
+                          >
+                            Reset
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Calibration Presets */}
+                      <div>
+                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2.5">Calibration Presets</h4>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => applyPreset("nose-lift")}
+                            className="rounded-2xl border border-slate-800 bg-slate-900/50 p-2.5 text-left hover:border-purple-500/40 hover:bg-slate-900 transition-all active:scale-95"
+                          >
+                            <span className="block font-bold text-white text-[10px]">Nose Lift</span>
+                            <span className="block text-[8px] text-slate-550 mt-0.5">Sits higher & closer</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => applyPreset("nose-lower")}
+                            className="rounded-2xl border border-slate-800 bg-slate-900/50 p-2.5 text-left hover:border-purple-500/40 hover:bg-slate-900 transition-all active:scale-95"
+                          >
+                            <span className="block font-bold text-white text-[10px]">Nose Drop</span>
+                            <span className="block text-[8px] text-slate-550 mt-0.5">Sits lower & outward</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => applyPreset("wide")}
+                            className="rounded-2xl border border-slate-800 bg-slate-900/50 p-2.5 text-left hover:border-purple-500/40 hover:bg-slate-900 transition-all active:scale-95"
+                          >
+                            <span className="block font-bold text-white text-[10px]">Wide Face</span>
+                            <span className="block text-[8px] text-slate-550 mt-0.5">Scales size up 5%</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => applyPreset("narrow")}
+                            className="rounded-2xl border border-slate-800 bg-slate-900/50 p-2.5 text-left hover:border-purple-500/40 hover:bg-slate-900 transition-all active:scale-95"
+                          >
+                            <span className="block font-bold text-white text-[10px]">Narrow Face</span>
+                            <span className="block text-[8px] text-slate-550 mt-0.5">Scales size down 5%</span>
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Drawer Footer Actions */}
+                <div className="pt-3 border-t border-slate-800/80 mt-3 flex gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={resetAllAdjustments}
+                    className="flex-1 rounded-xl border border-slate-850 py-2.5 text-[10px] font-bold text-slate-300 hover:bg-slate-900 hover:text-white transition-all active:scale-95"
+                  >
+                    Reset All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyPreset("standard")}
+                    className="flex-1 rounded-xl bg-slate-800 py-2.5 text-[10px] font-bold text-white hover:bg-slate-700 transition-all active:scale-95"
+                  >
+                    Reset Preset
                   </button>
                 </div>
               </div>
             )}
 
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3 rounded-full border border-white/10 bg-black/60 px-5 py-2.5 shadow-2xl backdrop-blur-md">
-              <button type="button" onClick={handleSnapshot}
-                className="flex flex-col items-center gap-1 text-slate-300 hover:text-white transition-colors group">
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-800/80 group-hover:bg-slate-700 transition-colors">
-                  <MaterialIcon name="photo_camera" className="!text-base" />
-                </span>
-                <span className="text-[9px] font-semibold">Snapshot</span>
-              </button>
+            {/* Bottom floating control bar */}
+            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 z-10 w-full flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pointer-events-none">
+              <div className="glass-chrome pointer-events-auto flex items-center gap-2 sm:gap-3 rounded-[26px] px-3 sm:px-5 py-2 sm:py-2.5 float-in">
+                <button
+                  type="button"
+                  onClick={handleSnapshot}
+                  className="flex flex-col items-center gap-1 text-slate-300 hover:text-white transition-colors group active:scale-95"
+                >
+                  <span className="flex h-11 w-11 sm:h-10 sm:w-10 items-center justify-center rounded-2xl bg-white/5 group-hover:bg-white/10 ring-1 ring-white/5 transition-colors">
+                    <MaterialIcon name="photo_camera" className="!text-lg" />
+                  </span>
+                  <span className="text-[9px] font-semibold tracking-wide">Snapshot</span>
+                </button>
 
-              <div className="h-8 w-px bg-white/10" />
+                <div className="h-9 w-px bg-white/10" />
 
-              <button type="button" onClick={() => setShowAdjust((p) => !p)}
-                className={`flex flex-col items-center gap-1 transition-colors ${showAdjust ? "text-purple-400" : "text-slate-300 hover:text-white"}`}>
-                <span className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors ${showAdjust ? "bg-purple-500/25" : "bg-slate-800/80 hover:bg-slate-700"}`}>
-                  <MaterialIcon name="tune" className="!text-base" />
-                </span>
-                <span className="text-[9px] font-semibold">Adjust</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAdjust((p) => !p)}
+                  className={`flex flex-col items-center gap-1 transition-colors active:scale-95 ${showAdjust ? "text-purple-300" : "text-slate-300 hover:text-white"}`}
+                >
+                  <span className={`flex h-11 w-11 sm:h-10 sm:w-10 items-center justify-center rounded-2xl ring-1 transition-colors ${showAdjust ? "bg-purple-500/25 ring-purple-400/40 shadow-[0_0_16px_-2px_rgba(168,85,247,0.6)]" : "bg-white/5 hover:bg-white/10 ring-white/5"}`}>
+                    <MaterialIcon name="tune" className="!text-lg" />
+                  </span>
+                  <span className="text-[9px] font-semibold tracking-wide">Adjust</span>
+                </button>
 
-              <div className="h-8 w-px bg-white/10" />
+                <div className="h-9 w-px bg-white/10" />
 
-              <Link
-                to={selected ? `/shop/${selected.id}` : "/shop"}
-                className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-purple-600 to-pink-500 px-4 py-2 text-xs font-semibold shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 transition-all whitespace-nowrap"
-              >
-                <MaterialIcon name="shopping_bag" className="!text-sm" />
-                Buy Now
-              </Link>
+                <Link
+                  to={selected ? `/shop/${selected.id}` : "/shop"}
+                  className="flex items-center gap-1.5 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-500 px-4 sm:px-5 py-2.5 sm:py-3 text-xs sm:text-sm font-bold shadow-lg shadow-purple-500/25 hover:shadow-purple-500/50 active:scale-95 transition-all whitespace-nowrap"
+                >
+                  <MaterialIcon name="shopping_bag" className="!text-base" />
+                  Buy Now
+                </Link>
+              </div>
             </div>
           </>
         )}
       </section>
 
-      <aside className="hidden md:flex flex-col w-[340px] xl:w-[380px] shrink-0 border-l border-slate-800/60 bg-slate-950/80 backdrop-blur-xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800/60 shrink-0">
+      {/* Desktop Sidebar Catalog */}
+      <aside className="hidden md:flex flex-col w-[340px] xl:w-[380px] shrink-0 border-l border-slate-900 bg-slate-950/80 backdrop-blur-xl overflow-hidden">
+        <div className="flex flex-col px-5 py-4 border-b border-slate-900 shrink-0 gap-3">
           <div>
-            <h1 className="text-base font-bold tracking-tight">Try-On Studio</h1>
+            <h1 className="text-base font-bold tracking-tight bg-gradient-to-r from-white via-purple-100 to-slate-300 bg-clip-text text-transparent">Try-On Studio</h1>
             <p className="text-[10px] text-slate-500 mt-0.5">Select a frame to try it on live</p>
+          </div>
+
+          {/* Dynamic Categories Filters */}
+          <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none custom-scrollbar">
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-3 py-1 text-[10px] font-bold rounded-full border transition-all whitespace-nowrap ${
+                  selectedCategory === cat
+                    ? "bg-purple-600 text-white border-purple-500 shadow-md shadow-purple-500/20"
+                    : "bg-slate-900/40 text-slate-400 border-slate-900 hover:text-slate-200 hover:border-slate-800"
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto min-h-0 px-3 py-3 space-y-2">
+        {/* Catalog List */}
+        <div className="flex-1 overflow-y-auto min-h-0 px-3 py-3 space-y-2.5 custom-scrollbar">
           {loadingCatalog ? (
             <div className="flex flex-col gap-2 pt-2">
               {[...Array(5)].map((_, i) => (
                 <div key={i} className="h-[72px] rounded-2xl bg-slate-900/60 animate-pulse" />
               ))}
             </div>
-          ) : products.length === 0 ? (
-            <div className="py-8 text-center text-sm text-slate-500">
-              No frames available. <Link to="/shop" className="text-purple-400 hover:underline">Browse shop</Link>
+          ) : filteredProducts.length === 0 ? (
+            <div className="py-12 text-center text-xs text-slate-500">
+              No frames available in this category. <br />
+              <Link to="/shop" className="text-purple-400 hover:underline mt-2 inline-block font-semibold">Browse shop</Link>
             </div>
           ) : (
-            products.map((p) => {
+            filteredProducts.map((p) => {
               const active = p.id === selectedId;
 
               return (
@@ -253,20 +930,25 @@ export default function VirtualTryOnPage() {
                   key={p.id}
                   type="button"
                   onClick={() => handleSelect(p.id)}
-                  className={`group relative flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition-all duration-150 ${
+                  className={`group relative flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition-all duration-200 ${
                     active
-                      ? "border-purple-500/70 bg-purple-500/10 ring-1 ring-purple-500/20"
-                      : "border-slate-800/60 bg-slate-900/30 hover:border-slate-700 hover:bg-slate-900/60"
+                      ? "border-purple-500/60 bg-purple-500/10 ring-1 ring-purple-500/10 shadow-[0_0_15px_-4px_rgba(168,85,247,0.35)]"
+                      : "border-slate-900 bg-slate-900/15 hover:border-slate-850 hover:bg-slate-900/40"
                   }`}
                 >
-                  <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-slate-700/50 bg-slate-800">
+                  <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-slate-800/80 bg-slate-900 shadow-inner">
                     <img src={displayImageUrl(p)} alt={p.name} className="h-full w-full object-cover" />
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <p className={`truncate text-xs font-bold leading-tight ${active ? "text-white" : "text-slate-200"}`}>{p.name}</p>
-                    <p className="mt-0.5 text-[10px] text-slate-500 truncate">{p.category ?? "Frame"}</p>
-                    <p className={`mt-0.5 text-xs font-semibold ${active ? "text-purple-300" : "text-slate-400"}`}>{formatPrice(p.price)}</p>
+                    <p className={`truncate text-xs font-bold leading-tight ${active ? "text-white" : "text-slate-200 group-hover:text-white transition-colors"}`}>{p.name}</p>
+                    <div className="mt-0.5 flex items-center gap-1.5">
+                      <p className="text-[10px] text-slate-500 truncate">{p.category ?? "Frame"}</p>
+                      {isBestFit(p.category, detectedShape) && (
+                        <span className="shrink-0 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-emerald-300">Best Fit ✨</span>
+                      )}
+                    </div>
+                    <p className={`mt-0.5 text-xs font-bold ${active ? "text-purple-300" : "text-slate-400"}`}>{formatPrice(p.price)}</p>
                   </div>
 
                   {active && (
@@ -276,7 +958,7 @@ export default function VirtualTryOnPage() {
                   )}
 
                   {!active && (
-                    <MaterialIcon name="arrow_forward_ios" className="!text-[10px] text-slate-600 group-hover:text-slate-400 transition-colors shrink-0" />
+                    <MaterialIcon name="arrow_forward_ios" className="!text-[9px] text-slate-700 group-hover:text-slate-400 transition-colors shrink-0" />
                   )}
                 </button>
               );
@@ -285,10 +967,10 @@ export default function VirtualTryOnPage() {
         </div>
 
         {selected && (
-          <div className="shrink-0 px-4 py-4 border-t border-slate-800/60">
+          <div className="shrink-0 px-4 py-4 border-t border-slate-900 bg-slate-950/90 backdrop-blur-md">
             <Link
               to={`/shop/${selected.id}`}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-500 py-3 text-sm font-bold text-white shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 transition-all active:scale-95"
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-500 py-3 text-sm font-bold text-white shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 active:scale-95 transition-all"
             >
               <MaterialIcon name="shopping_bag" className="!text-base" />
               Add to Cart — {formatPrice(selected.price)}
@@ -297,34 +979,58 @@ export default function VirtualTryOnPage() {
         )}
       </aside>
 
-      <section className="md:hidden shrink-0 flex flex-col bg-slate-950 border-t border-slate-800/60 max-h-[35vh]">
-        <div className="flex items-center justify-between px-4 pt-3 pb-1 shrink-0">
-          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-200">Select Frame</h3>
+      {/* Mobile Catalog Horizontal Carousel */}
+      <section className="md:hidden shrink-0 flex flex-col bg-gradient-to-b from-slate-950 to-black border-t border-white/5 max-h-[38dvh]">
+        <div className="flex items-center justify-between px-4 pt-3 pb-1.5 shrink-0">
+          <h3 className="text-[11px] font-bold uppercase tracking-widest bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">
+            {selectedCategory === "All" ? "Select Frame" : selectedCategory} · {filteredProducts.length}
+          </h3>
+
+          {/* Mobile Category Select */}
+          <select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            className="tryon-chrome-select text-[11px] font-bold bg-white/5 text-slate-200 border border-white/10 rounded-lg px-2.5 py-1"
+          >
+            {categories.map((c) => (
+              <option key={c} value={c} className="bg-slate-900">{c}</option>
+            ))}
+          </select>
         </div>
 
-        <div className="flex gap-2.5 overflow-x-auto px-4 pb-3 pt-1 snap-x snap-mandatory">
+        <div className="flex gap-3 overflow-x-auto px-4 pt-1 pb-[max(1rem,env(safe-area-inset-bottom))] snap-x snap-mandatory scrollbar-none">
           {loadingCatalog ? (
             [...Array(4)].map((_, i) => (
               <div key={i} className="w-[88px] h-[100px] shrink-0 rounded-xl bg-slate-900 animate-pulse" />
             ))
+          ) : filteredProducts.length === 0 ? (
+            <div className="py-6 text-center text-[10px] text-slate-500 w-full">
+              No products found.
+            </div>
           ) : (
-            products.map((p) => {
+            filteredProducts.map((p) => {
               const active = p.id === selectedId;
 
               return (
-                <button key={p.id} type="button" onClick={() => handleSelect(p.id)}
-                  className={`relative flex w-[88px] shrink-0 snap-start flex-col rounded-xl border p-1.5 text-left transition-all ${
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => handleSelect(p.id)}
+                  className={`relative flex w-[92px] shrink-0 snap-start flex-col rounded-2xl border p-2 text-left transition-all ${
                     active
-                      ? "border-purple-500 bg-purple-500/15 ring-1 ring-purple-500/20"
-                      : "border-slate-800 bg-slate-900/40"
+                      ? "border-purple-500 bg-purple-500/10 ring-1 ring-purple-500/20 shadow-[0_0_10px_-2px_rgba(168,85,247,0.3)]"
+                      : "border-slate-900 bg-slate-900/30"
                   }`}
                 >
-                  <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-slate-800 border border-slate-700">
+                  <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-slate-900 border border-slate-800/80">
                     <img src={displayImageUrl(p)} alt={p.name} className="h-full w-full object-cover" />
                     {active && (
-                      <span className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-purple-500">
+                      <span className="absolute right-1 top-1 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-purple-500 shadow-md">
                         <MaterialIcon name="check" className="!text-[9px] text-white" />
                       </span>
+                    )}
+                    {isBestFit(p.category, detectedShape) && (
+                      <span className="absolute left-1 top-1 rounded-full bg-emerald-500/90 px-1.5 py-0.5 text-[7px] font-bold uppercase text-white shadow">Fit ✨</span>
                     )}
                   </div>
                   <p className="mt-1 truncate text-[9px] font-bold text-slate-200 px-0.5">{p.name}</p>
