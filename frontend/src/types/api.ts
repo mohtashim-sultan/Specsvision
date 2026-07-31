@@ -1,3 +1,5 @@
+export type ProductColor = { name: string; hex: string };
+
 export type Product = {
   id: number;
   sku: string;
@@ -11,6 +13,72 @@ export type Product = {
   thumbnail: string | null;
   stock_quantity: number;
   category?: string | null;
+  material?: string | null;
+  lens_width_mm?: number | null;
+  bridge_mm?: number | null;
+  temple_mm?: number | null;
+  lens_features?: string | null;
+  colors?: ProductColor[];
+  avg_rating?: number | null;
+  review_count?: number;
+};
+
+export type AdminUser = {
+  id: number;
+  email: string;
+  full_name: string | null;
+  created_at: string;
+  order_count: number;
+  total_spent: string;
+  review_count: number;
+};
+
+export type AdminUserList = {
+  items: AdminUser[];
+  total: number;
+};
+
+export type AdminAnalytics = {
+  sales_by_day: { date: string; revenue: string; orders: number }[];
+  top_products: { product_id: number | null; name: string; units_sold: number; revenue: string }[];
+  sentiment_breakdown: Record<string, number>;
+  rating_distribution: Record<string, number>;
+  revenue_total: string;
+  orders_total: number;
+};
+
+export type WishlistItem = { id: number; product: Product; created_at: string };
+export type WishlistResponse = { items: WishlistItem[] };
+
+export type Review = {
+  id: number;
+  product_id: number;
+  rating: number;
+  title: string | null;
+  body: string | null;
+  sentiment: "positive" | "neutral" | "negative";
+  author_name: string;
+  is_mine: boolean;
+  created_at: string;
+};
+
+export type ReviewSummary = {
+  review_count: number;
+  avg_rating: number | null;
+  rating_breakdown: Record<string, number>;
+  sentiment_breakdown: Record<string, number>;
+};
+
+export type ReviewList = {
+  summary: ReviewSummary;
+  items: Review[];
+  my_review: Review | null;
+};
+
+export type ReviewPayload = {
+  rating: number;
+  title?: string | null;
+  body?: string | null;
 };
 
 export type User = {
@@ -88,9 +156,32 @@ export type CartResponse = {
 export type CheckoutResult = {
   order_id: number;
   status: string;
+  subtotal: string;
+  tax: string;
+  shipping_fee: string;
+  discount: string;
   total: string;
   payment_reference: string | null;
   message: string;
+};
+
+export type CheckoutPayload = {
+  shipping: {
+    full_name: string;
+    address: string;
+    city: string;
+    state: string;
+    zip_code: string;
+    email: string;
+    phone: string;
+  };
+  payment: {
+    card_number: string;
+    card_expiry: string;
+    card_cvv: string;
+    simulate_success: boolean;
+  };
+  coupon_code?: string | null;
 };
 
 export type ApiErrorBody = {

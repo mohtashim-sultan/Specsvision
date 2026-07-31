@@ -1,6 +1,14 @@
 import { API_BASE } from "../config/env";
 import { apiRequest, getStoredToken } from "./http";
-import type { AdminOrderDetail, AdminOrderList, AdminStats, Product } from "../types/api";
+import type {
+  AdminAnalytics,
+  AdminOrderDetail,
+  AdminOrderList,
+  AdminStats,
+  AdminUserList,
+  Product,
+  ProductColor,
+} from "../types/api";
 
 export async function uploadAdminImage(file: File): Promise<{ url: string }> {
   const formData = new FormData();
@@ -40,6 +48,15 @@ export async function fetchAdminProducts(): Promise<Product[]> {
   return apiRequest<Product[]>("/api/admin/products");
 }
 
+type ProductSpecFields = {
+  material?: string | null;
+  lens_width_mm?: number | null;
+  bridge_mm?: number | null;
+  temple_mm?: number | null;
+  lens_features?: string | null;
+  colors?: ProductColor[] | null;
+};
+
 export async function createAdminProduct(body: {
   sku: string;
   name: string;
@@ -52,7 +69,7 @@ export async function createAdminProduct(body: {
   thumbnail?: string | null;
   stock_quantity: number;
   category?: string | null;
-}): Promise<Product> {
+} & ProductSpecFields): Promise<Product> {
   return apiRequest<Product>("/api/admin/products", {
     method: "POST",
     body: JSON.stringify(body),
@@ -73,12 +90,25 @@ export async function updateAdminProduct(
     thumbnail: string | null;
     stock_quantity: number;
     category: string | null;
-  }>,
+  } & ProductSpecFields>,
 ): Promise<Product> {
   return apiRequest<Product>(`/api/admin/products/${id}`, {
     method: "PATCH",
     body: JSON.stringify(body),
   });
+}
+
+export async function fetchAdminUsers(params: { q?: string; offset?: number; limit?: number } = {}): Promise<AdminUserList> {
+  const sp = new URLSearchParams();
+  if (params.q) sp.set("q", params.q);
+  if (params.offset != null) sp.set("offset", String(params.offset));
+  if (params.limit != null) sp.set("limit", String(params.limit));
+  const q = sp.toString();
+  return apiRequest<AdminUserList>(`/api/admin/users${q ? `?${q}` : ""}`);
+}
+
+export async function fetchAdminAnalytics(): Promise<AdminAnalytics> {
+  return apiRequest<AdminAnalytics>("/api/admin/analytics");
 }
 
 export async function deleteAdminProduct(id: number): Promise<void> {

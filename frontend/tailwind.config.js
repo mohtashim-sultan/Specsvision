@@ -45,8 +45,19 @@ module.exports = {
   content: ["./src/**/*.{js,jsx,ts,tsx}"],
   theme: {
     extend: {
-      colors: brand,
+      colors: {
+        ...brand,
+        // Intermediate slate steps used by the try-on studio chrome. Tailwind's default
+        // slate scale jumps 500→600 and 800→900; without these, classes like
+        // `bg-slate-850` silently emit nothing and the element renders unstyled.
+        slate: {
+          550: "#5b6779",
+          850: "#172033",
+        },
+      },
       spacing: {
+        // Tailwind's default scale has 3.5 but not 4.5; `h-4.5` was emitting no rule.
+        4.5: "1.125rem",
         xs: "4px",
         sm: "12px",
         base: "8px",

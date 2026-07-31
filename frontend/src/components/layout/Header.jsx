@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ShoppingCart, User, Eye, Menu } from 'lucide-react';
+import { ShoppingCart, User, Eye, Menu, Heart, GitCompare } from 'lucide-react';
 import MobileMenu from './MobileMenu';
 import { useAuth } from '../../context/AuthContext';
+import { useWishlist } from '../../context/WishlistContext';
+import { useCompare } from '../../context/CompareContext';
 import ThemeToggle from '../common/ThemeToggle';
 
 const navLinks = [
@@ -16,6 +18,8 @@ const navLinks = [
 export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { cartCount, isAuthenticated, admin, logout, user } = useAuth();
+  const { count: wishlistCount } = useWishlist();
+  const { count: compareCount } = useCompare();
   const location = useLocation();
 
   return (
@@ -139,6 +143,42 @@ export default function Header() {
               )}
 
               <ThemeToggle />
+
+              {!admin && (
+                <Link
+                  to="/compare"
+                  className="hidden sm:flex p-2 transition-all relative min-w-[44px] min-h-[44px] items-center justify-center rounded-lg"
+                  style={{ color: 'var(--text-nav)' }}
+                  onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-accent)'; e.currentTarget.style.backgroundColor = 'var(--surface-bg-secondary)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-nav)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
+                  aria-label="Compare frames"
+                >
+                  <GitCompare className="w-5 h-5" />
+                  {compareCount > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-[10px] sm:text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center font-semibold shadow-md">
+                      {compareCount}
+                    </span>
+                  )}
+                </Link>
+              )}
+
+              {!admin && (
+                <Link
+                  to="/wishlist"
+                  className="p-2 transition-all relative min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg"
+                  style={{ color: 'var(--text-nav)' }}
+                  onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-accent)'; e.currentTarget.style.backgroundColor = 'var(--surface-bg-secondary)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-nav)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
+                  aria-label="Wishlist"
+                >
+                  <Heart className="w-5 h-5" />
+                  {wishlistCount > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-[10px] sm:text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center font-semibold shadow-md">
+                      {wishlistCount > 9 ? '9+' : wishlistCount}
+                    </span>
+                  )}
+                </Link>
+              )}
 
               <Link
                 to="/cart"

@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
+import { FACE_SHAPE_LANDMARKS, classifyFaceShape, type FaceShape } from "./faceShape";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -22,6 +23,15 @@ type TryOnViewerProps = {
   onStatusChange?: (status: TryOnStatus, detail?: string) => void;
   onFaceShapeDetect?: (faceShape: string | null) => void;
   scaleOffset?: number;
+  templeLength?: number;
+  faceStretch?: number;
+  cameraZoom?: number;
+  positionX?: number;
+  positionY?: number;
+  positionZ?: number;
+  rotationX?: number;
+  rotationY?: number;
+  rotationZ?: number;
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -36,22 +46,129 @@ async function getMindARThree(): Promise<any> {
   return mod.MindARThree;
 }
 
+/**
+ * Camera "enhance" look — a light contrast/saturation/brightness lift applied to
+ * the webcam feed so the whole try-on reads crisp and premium instead of flat.
+ * Kept subtle so skin tones stay natural.
+ */
+const CAMERA_FILTER = "contrast(1.08) saturate(1.14) brightness(1.03)";
+
+// ── AR placement tuning ─────────────────────────────────────────────────────────
+// Placement is driven by a landmark head-pose basis (eyes → right, forehead↔chin → up),
+// not MindAR's single-anchor rotation, so the frame tracks pitch/roll/yaw and sticks on
+// tilt. These constants are the knobs to dial from screenshots — all are fractions of the
+// inter-eye-corner distance (so they're distance-invariant) unless noted.
+const AR = {
+  SCALE_K: 2.15,     // frame width ÷ eye-corner distance (bigger = larger glasses)
+  SEAT_DOWN: 0.02,   // seat below the eye line (+ = down toward nose)
+  SEAT_FWD: 0.30,    // push forward off the face so lenses clear the brow (+ = toward camera)
+  FWD_SIGN: 1,       // flip to -1 if the glasses render facing away from the camera
+  TEMPLE_MIN: 0.6,   // clamp range for the auto arm-length stretch
+  TEMPLE_MAX: 3.2,
+  SMOOTH: 28,        // pose smoothing (higher = snappier/less lag, lower = smoother/less jitter)
+};
+
+// Landmark indices used to build the head-pose basis (MediaPipe FaceMesh 468 topology).
+const POSE_LANDMARKS = { eyeL: 33, eyeR: 263, foreheadTop: 10, chin: 152 } as const;
+
 // ── Component ──────────────────────────────────────────────────────────────────
 
 const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
   function TryOnViewer(
-    { frameSrc, onStatusChange, onFaceShapeDetect, scaleOffset },
+    {
+      frameSrc,
+      onStatusChange,
+      onFaceShapeDetect,
+      scaleOffset,
+      templeLength,
+      faceStretch,
+      cameraZoom,
+      positionX,
+      positionY,
+      positionZ,
+      rotationX,
+      rotationY,
+      rotationZ,
+    },
     ref,
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
     const mindarRef = useRef<any>(null);
     const glassesRef = useRef<THREE.Group | null>(null);
     const baseScaleRef = useRef(1);
+    /** Native depth (Z size) of the loaded frame — used to auto-fit temple length to the ears. */
+    const rawDepthRef = useRef(0);
+    /** Native width (X size) of the loaded frame — used to scale frame width to the eyes. */
+    const rawWidthRef = useRef(1);
+    /** Read-only landmark anchors (eyes/forehead/chin) that drive the head-pose basis. */
+    const poseAnchorsRef = useRef<Record<string, any> | null>(null);
+    /** Smoothed temple-length Z multiplier held across frames. */
+    const templeZRef = useRef(1.0);
+    /** Temple-tip reference (group space, pre-scale): height & depth of the arm ends. */
+    const armTipYRef = useRef(0);
+    const armTipZRef = useRef(-1);
     const loadIdRef = useRef(0);
-    const smoothRef = useRef({ scale: 1, y: -0.065, z: 0.015 });
-    const offsetsRef = useRef({ scale: 1.0 });
+    /**
+     * Re-runs the cover-fit layout. Owned by the init effect; called from prop-change
+     * effects and the ResizeObserver. Null until AR has started.
+     */
+    const applyFitRef = useRef<(() => void) | null>(null);
+    /**
+     * The rect (in container CSS px) that BOTH the video and the WebGL canvas occupy.
+     * Snapshot compositing reads this so the saved PNG matches what's on screen.
+     */
+    const fitRectRef = useRef({ left: 0, top: 0, width: 0, height: 0 });
+
+    // Face-shape detection: extra read-only landmark anchors + a stabilization buffer so we
+    // only surface a shape once it's held steady across many frames (avoids flicker).
+    const shapeAnchorsRef = useRef<Record<string, any> | null>(null);
+    const shapeSamplesRef = useRef<FaceShape[]>([]);
+    const lastShapeRef = useRef<string | null>(null);
+    const shapeFrameRef = useRef(0);
+
+    // Current smoothed values (for lerping user-adjustment changes only).
+    // These are NOT used to smooth face-tracking — tracking is instant.
+    const smoothRef = useRef({
+      scale: 1,
+      templeLength: 1.0,
+      x: 0,
+      y: -0.080,
+      z: 0.018,
+      rx: 0,
+      ry: 0,
+      rz: 0,
+    });
+
+    // Target adjustment values set by React props (updated via useEffect).
+    // The animation loop reads these via ref to avoid stale closures.
+    const adjustmentsRef = useRef({
+      scale: 1.0,
+      templeLength: 1.0,
+      faceStretch: 1.0,
+      cameraZoom: 1.0,
+      positionX: 0.0,
+      positionY: -0.080,
+      positionZ: 0.018,
+      rotationX: 0.0,
+      rotationY: 0.0,
+      rotationZ: 0.0,
+    });
     const reportedStatusRef = useRef<TryOnStatus>("loading");
-    offsetsRef.current = { scale: scaleOffset ?? 1.0 };
+
+    useEffect(() => {
+      adjustmentsRef.current = {
+        scale: scaleOffset ?? 1.0,
+        templeLength: templeLength ?? 1.0,
+        faceStretch: faceStretch ?? 1.0,
+        cameraZoom: cameraZoom ?? 1.0,
+        positionX: positionX ?? 0.0,
+        positionY: positionY ?? -0.080,
+        positionZ: positionZ ?? 0.018,
+        rotationX: rotationX !== undefined ? (rotationX * Math.PI) / 180 : 0.0,
+        rotationY: rotationY !== undefined ? (rotationY * Math.PI) / 180 : 0.0,
+        rotationZ: rotationZ !== undefined ? (rotationZ * Math.PI) / 180 : 0.0,
+      };
+    }, [scaleOffset, templeLength, faceStretch, cameraZoom, positionX, positionY, positionZ, rotationX, rotationY, rotationZ]);
 
     const [overlay, setOverlay] = useState<{ status: TryOnStatus; detail?: string }>({ status: "loading" });
 
@@ -74,13 +191,13 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
         const mindar = mindarRef.current;
         if (!mindar) return;
         const thisLoad = ++loadIdRef.current;
-        const anchor = mindar.anchors?.[0];
-        if (!anchor) return;
+        const scene = mindar.scene;
+        if (!scene) return;
 
-        // Remove previous glasses from the anchor
-        for (const c of [...anchor.group.children]) {
+        // Remove previous glasses from the scene
+        for (const c of [...scene.children]) {
           if (c.userData._glassesMarker) {
-            anchor.group.remove(c);
+            scene.remove(c);
             c.traverse((child: THREE.Object3D) => {
               if (child instanceof THREE.Mesh) {
                 child.geometry?.dispose();
@@ -92,7 +209,16 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
           }
         }
         glassesRef.current = null;
-        smoothRef.current = { scale: 1, y: -0.065, z: 0.015 };
+        smoothRef.current = {
+          scale: baseScaleRef.current * (adjustmentsRef.current.scale),
+          templeLength: adjustmentsRef.current.templeLength,
+          x: adjustmentsRef.current.positionX,
+          y: adjustmentsRef.current.positionY,
+          z: adjustmentsRef.current.positionZ,
+          rx: adjustmentsRef.current.rotationX,
+          ry: adjustmentsRef.current.rotationY,
+          rz: adjustmentsRef.current.rotationZ,
+        };
 
         if (!src || !isModelSrc(src)) return;
 
@@ -101,38 +227,109 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
           src,
           (gltf) => {
             if (loadIdRef.current !== thisLoad) return;
-            const glasses = gltf.scene;
+            const model = gltf.scene;
 
             // Ensure depth is correct so glasses render in front of occluder
-            glasses.traverse((child) => {
+            model.traverse((child) => {
               if (child instanceof THREE.Mesh) {
                 child.material.depthTest = true;
                 child.material.depthWrite = true;
                 child.renderOrder = 10;
 
-                // Clamp lens opacity if transparent
+                // Keep transparent lenses see-through but prominent (was 0.3 → too ghostly)
                 if (child.material.transparent) {
-                  child.material.opacity = Math.min(child.material.opacity, 0.3);
+                  child.material.opacity = Math.max(0.6, Math.min(child.material.opacity, 0.85));
                 }
               }
             });
 
-            // Auto-scale to match face width
-            glasses.updateMatrixWorld(true);
-            const box = new THREE.Box3().setFromObject(glasses);
-            const size = box.getSize(new THREE.Vector3());
+            // ── PIVOT CENTERING ──────────────────────────────────────────
+            // Wrap the raw model in a parent Group. We shift the model
+            // inside this group so that the center-front of the frame
+            // (the nose bridge) sits at (0,0,0) in the group's local
+            // coordinate system. This means all position/rotation
+            // adjustments pivot exactly at the nose bridge — so when the
+            // user tilts or turns their head, the glasses stay locked to
+            // the nose instead of orbiting around an arbitrary point.
+            const glassesGroup = new THREE.Group();
+            glassesGroup.userData._glassesMarker = true;
 
+            // Compute the bounding box of the raw model
+            model.updateMatrixWorld(true);
+            const rawBox = new THREE.Box3().setFromObject(model);
+            const rawSize = rawBox.getSize(new THREE.Vector3());
+            const rawCenter = rawBox.getCenter(new THREE.Vector3());
+
+            // Capture the temple-tip reference (average of the back-most 20% of the
+            // model) so the animation loop can AIM the arms straight at the ears —
+            // correcting the arm's vertical angle, not just its length. Done here
+            // while matrices are still in raw model space (pre-recenter).
+            {
+              const backZ = rawBox.min.z + rawSize.z * 0.20;
+              const _p = new THREE.Vector3();
+              let tipYSum = 0, tipZSum = 0, tipN = 0;
+              model.traverse((child) => {
+                if (child instanceof THREE.Mesh && child.geometry?.attributes?.position) {
+                  const posAttr = child.geometry.attributes.position as THREE.BufferAttribute;
+                  for (let i = 0; i < posAttr.count; i++) {
+                    _p.fromBufferAttribute(posAttr, i).applyMatrix4(child.matrixWorld);
+                    if (_p.z <= backZ) { tipYSum += _p.y; tipZSum += _p.z; tipN++; }
+                  }
+                }
+              });
+              if (tipN > 0) {
+                armTipYRef.current = tipYSum / tipN - rawCenter.y;      // height vs. bridge
+                armTipZRef.current = tipZSum / tipN - rawBox.max.z;     // depth (negative = behind)
+              } else {
+                armTipYRef.current = 0;
+                armTipZRef.current = -rawSize.z;
+              }
+            }
+
+            // Shift model so that:
+            //   X: center of frame width → nose bridge center
+            //   Y: center of frame height → eye level
+            //   Z: front-most surface (lens plane) → at z=0
+            // This way the glassesGroup origin IS the nose bridge.
+            model.position.set(-rawCenter.x, -rawCenter.y, -rawBox.max.z);
+            glassesGroup.add(model);
+
+            // Scale the wrapper so the frame width matches the target
+            // face width in MindAR's coordinate system (~0.95 units).
             const targetFaceWidth = 0.95;
-            baseScaleRef.current = targetFaceWidth / size.x;
-            glasses.scale.setScalar(baseScaleRef.current);
+            baseScaleRef.current = targetFaceWidth / rawSize.x;
+            // Native frame width & depth: the loop scales width to the eyes and stretches
+            // depth (arm length) to reach the ears.
+            rawWidthRef.current = rawSize.x || 1;
+            rawDepthRef.current = rawSize.z;
 
-            // Position on nose bridge (Y=-0.065 places lenses at eye level)
-            glasses.position.set(0, -0.065, 0.015);
-            glasses.rotation.set(-0.08, 0, 0);
-            glasses.userData._glassesMarker = true;
-            anchor.group.add(glasses);
-            glassesRef.current = glasses;
+            // Apply initial transforms from current adjustments
+            const adj = adjustmentsRef.current;
+            glassesGroup.scale.set(
+              baseScaleRef.current * adj.scale,
+              baseScaleRef.current * adj.scale,
+              baseScaleRef.current * adj.scale * adj.templeLength
+            );
+            glassesGroup.position.set(adj.positionX, adj.positionY, adj.positionZ);
+            glassesGroup.rotation.set(adj.rotationX, adj.rotationY, adj.rotationZ);
 
+            // Sync smoothRef so lerp doesn't animate from stale values
+            smoothRef.current = {
+              scale: baseScaleRef.current * adj.scale,
+              templeLength: adj.templeLength,
+              x: adj.positionX,
+              y: adj.positionY,
+              z: adj.positionZ,
+              rx: adj.rotationX,
+              ry: adj.rotationY,
+              rz: adj.rotationZ,
+            };
+
+            // Parent to the scene (not the nose anchor): the animation loop drives its
+            // world position/orientation/scale from the landmark head-pose basis.
+            glassesGroup.matrixAutoUpdate = true;
+            scene.add(glassesGroup);
+            glassesRef.current = glassesGroup;
           },
           undefined,
           (err) => {
@@ -143,6 +340,12 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
       },
       [reportStatus],
     );
+
+    // Zoom / stretch are baked into the fit rect, so a re-fit is all that's needed.
+    // (No projection change — the camera intrinsics are unaffected.)
+    useEffect(() => {
+      applyFitRef.current?.();
+    }, [faceStretch, cameraZoom]);
 
     // ── Snapshot ────────────────────────────────────────────────────────────────
 
@@ -159,20 +362,27 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
         snap.height = h;
         const ctx = snap.getContext("2d");
         if (!ctx) return null;
-        const vW = mindar.video.videoWidth || w;
-        const vH = mindar.video.videoHeight || h;
-        const vAsp = vW / vH;
-        const cAsp = w / h;
-        let sx = 0, sy = 0, sw = vW, sh = vH;
-        if (vAsp > cAsp) { sw = vH * cAsp; sx = (vW - sw) / 2; }
-        else { sh = vW / cAsp; sy = (vH - sh) / 2; }
+
+        // Composite exactly what's on screen: both layers occupy the same fit rect, so
+        // drawing them into that rect reproduces the live view (including any crop that
+        // falls outside the container — the canvas clips it for us).
+        const { left, top, width, height } = fitRectRef.current;
+        if (width <= 0 || height <= 0) return null;
+
+        ctx.fillStyle = "#020617";
+        ctx.fillRect(0, 0, w, h);
+
         ctx.save();
-        ctx.translate(w, 0);
+        // Mirror about the fit rect's own centre so the flip matches the on-screen video.
+        ctx.translate(left + width / 2, 0);
         ctx.scale(-1, 1);
-        ctx.drawImage(mindar.video, sx, sy, sw, sh, 0, 0, w, h);
-        ctx.restore();
+        ctx.translate(-(left + width / 2), 0);
+        ctx.filter = CAMERA_FILTER; // match the on-screen enhanced feed
+        ctx.drawImage(mindar.video, left, top, width, height);
+        ctx.restore(); // resets filter to none so the 3D frame draws unfiltered
+
         const canvas = mindar.renderer?.domElement;
-        if (canvas) ctx.drawImage(canvas, 0, 0, w, h);
+        if (canvas) ctx.drawImage(canvas, left, top, width, height);
         return snap.toDataURL("image/png");
       },
     }));
@@ -182,49 +392,235 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
     useEffect(() => {
       let cancelled = false;
       let mindarInstance: any = null;
+      const cleanupFns: Array<() => void> = [];
 
       async function init() {
         try {
           reportStatus("loading", "Starting AR…");
 
-          // Load MindAR via CDN script injection
+          // Load MindAR face-tracking module
           const MindARThree = await getMindARThree();
 
           if (cancelled) return;
           const container = containerRef.current;
           if (!container) return;
 
-          mindarInstance = new MindARThree({
-            container,
-            maxTrack: 1,
-            shouldFaceUser: true,
-          });
+          // ── MindAR init with One-Euro filter for smoother tracking ──
+          // filterMinCF: minimum cutoff frequency (lower = smoother/calmer when still)
+          // filterBeta: speed coefficient (higher = snappier but jitterier while moving)
+          // beta:1000 (previous) let raw landmark jitter straight through during motion,
+          // so the frames shook. beta:10 keeps a smooth, glued-on feel with only a hair
+          // of lag on fast head turns — the sweet spot for eyewear try-on.
+          //
+          // Construction happens with window.addEventListener temporarily stubbed, because
+          // MindAR's constructor registers `window.addEventListener("resize", this._resize.bind(this))`
+          // — binding the PROTOTYPE method. Any later override of `_resize` is invisible to
+          // that listener, so every real resize (mobile address bar, rotate, keyboard) ran
+          // MindAR's original sizing, which repositions the <video> but never touches the
+          // WebGL canvas's transform. The two then held different geometry and the glasses
+          // rendered offset from the face. We drop that listener and own resize ourselves.
+          const nativeAddEventListener = window.addEventListener;
+          window.addEventListener = function patchedAdd(this: Window, type: string, ...rest: any[]) {
+            if (type === "resize") return; // drop MindAR's internal listener
+            return (nativeAddEventListener as any).call(this, type, ...rest);
+          } as typeof window.addEventListener;
+          try {
+            mindarInstance = new MindARThree({
+              container,
+              maxTrack: 1,
+              shouldFaceUser: true,
+              filterMinCF: 0.001,   // calm, jitter-free when the head is still
+              filterBeta: 10,       // follows movement smoothly without shaking
+              // Suppress MindAR's stock loading/scanning/error overlays — this component
+              // renders its own status chrome, and MindAR's injected its own absolutely
+              // positioned layers into the same container.
+              uiLoading: "no",
+              uiScanning: "no",
+              uiError: "no",
+            });
+          } finally {
+            window.addEventListener = nativeAddEventListener;
+          }
 
           mindarRef.current = mindarInstance;
 
           const { renderer, scene, camera } = mindarInstance;
 
-          renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-          renderer.setSize(container.clientWidth, container.clientHeight);
+          // Phones are fill-rate bound and also run MediaPipe on the same thread, so cap the
+          // device pixel ratio harder there. MindAR sizes the drawing buffer to the video's
+          // native resolution, so this is what actually bounds per-frame GPU cost.
+          const isCoarsePointer = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+          renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isCoarsePointer ? 1.5 : 2));
 
-          // Lighting setup (matches public/ar/main.js)
-          scene.add(new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1));
-          scene.add(new THREE.AmbientLight(0xffffff, 1.4));
-          const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+          // MindAR's own _resize handles the camera projection (fov/aspect from the tracker's
+          // intrinsics) and the drawing-buffer size. We keep that, but strip its DOM geometry
+          // work by re-applying our own layout immediately afterwards.
+          const originalResize = mindarInstance._resize.bind(mindarInstance);
+
+          /**
+           * Single source of truth for on-screen layout.
+           *
+           * Computes one cover-fit rect for the container and applies the IDENTICAL
+           * left/top/width/height to both the camera <video> and the WebGL canvas, so the
+           * two can never disagree. Zoom is applied to this rect (a crop) rather than as a
+           * CSS transform on the composited layers — a transform shrank the whole feed and
+           * was the mechanism by which the two elements drifted apart.
+           */
+          const applyFit = () => {
+            const video = mindarInstance?.video;
+            const canvas = mindarInstance?.renderer?.domElement;
+            const el = containerRef.current;
+            if (!video || !canvas || !el) return;
+
+            const cw = el.clientWidth;
+            const ch = el.clientHeight;
+            const vw = video.videoWidth;
+            const vh = video.videoHeight;
+            if (cw <= 0 || ch <= 0 || vw <= 0 || vh <= 0) return;
+
+            // Cover-fit: the smallest rect with the video's aspect that fully covers the container.
+            const vAsp = vw / vh;
+            const cAsp = cw / ch;
+            let w: number;
+            let h: number;
+            if (vAsp > cAsp) { h = ch; w = ch * vAsp; }
+            else { w = cw; h = cw / vAsp; }
+
+            // zoom is clamped to >= 1 so the feed always covers — no black bars, ever.
+            const zoom = Math.max(1, adjustmentsRef.current.cameraZoom ?? 1);
+            const stretch = adjustmentsRef.current.faceStretch ?? 1;
+            w *= zoom;
+            h *= zoom * stretch;
+
+            const left = (cw - w) / 2;
+            const top = (ch - h) / 2;
+            fitRectRef.current = { left, top, width: w, height: h };
+
+            // Centering is expressed as left/top 50% + translate(-50%,-50%) rather than
+            // computed pixel offsets. Percentages resolve against the containing block at
+            // PAINT time, so the feed stays centred even if the width/height below are a
+            // frame stale — a computed `left` silently anchors the feed to one edge the
+            // moment the container size it was derived from stops being current.
+            const mirrored = mindarInstance.shouldFaceUser && !mindarInstance.disableFaceMirror;
+            for (const node of [video, canvas] as HTMLElement[]) {
+              node.style.position = "absolute";
+              node.style.left = "50%";
+              node.style.top = "50%";
+              node.style.right = "auto";
+              node.style.bottom = "auto";
+              node.style.margin = "0";
+              node.style.maxWidth = "none";
+              node.style.maxHeight = "none";
+              node.style.width = `${w}px`;
+              node.style.height = `${h}px`;
+              node.style.transformOrigin = "center center";
+            }
+            // The box is already the video's exact aspect (times faceStretch), so the feed
+            // must FILL it. Leaving the `cover` fallback active would make the video crop
+            // while the canvas stretched whenever faceStretch != 1 — desyncing them again.
+            video.style.objectFit = "fill";
+
+            // Only the video is mirrored; MindAR already mirrors the tracking math for the
+            // 3D scene (controller.setup(mirror)), so mirroring the canvas would double it.
+            video.style.transform = `translate(-50%, -50%)${mirrored ? " scaleX(-1)" : ""}`;
+            canvas.style.transform = "translate(-50%, -50%)";
+
+            // Keep the CSS3D layer on the same rect. It scales from its top-left, so it
+            // needs the equivalent centring expressed as a leading translate.
+            const cssCanvas = mindarInstance.cssRenderer?.domElement as HTMLElement | undefined;
+            if (cssCanvas) {
+              cssCanvas.style.position = "absolute";
+              cssCanvas.style.left = "50%";
+              cssCanvas.style.top = "50%";
+              cssCanvas.style.transformOrigin = "top left";
+              cssCanvas.style.transform =
+                `translate(${-w / 2}px, ${-h / 2}px) scale(${w / (vw || 1)}, ${h / (vh || 1)})`;
+            }
+
+            // Dev-only: verify the feed actually landed centred on the container. Fits only
+            // run on resize, so this can't spam. If the feed is ever visibly off to one side,
+            // this reports which measurement disagreed instead of leaving it to guesswork.
+            if (process.env.NODE_ENV !== "production") {
+              const cRect = el.getBoundingClientRect();
+              const vRect = video.getBoundingClientRect();
+              const drift = Math.round((vRect.left + vRect.width / 2) - (cRect.left + cRect.width / 2));
+              const log = Math.abs(drift) > 1 ? console.warn : console.debug;
+              log(
+                `[TryOn fit] container ${cw}x${ch} · stream ${vw}x${vh} (${vAsp > 1 ? "landscape" : "portrait"}) ` +
+                `· feed ${Math.round(w)}x${Math.round(h)} · zoom ${zoom} · horizontal drift ${drift}px` +
+                (Math.abs(drift) > 1 ? " ← FEED IS NOT CENTRED" : ""),
+              );
+            }
+          };
+          applyFitRef.current = applyFit;
+
+          // Replace _resize wholesale: projection/buffer from MindAR, geometry from us.
+          mindarInstance._resize = () => {
+            try {
+              originalResize();
+            } catch (e) {
+              console.warn("MindAR internal resize failed", e);
+            }
+            applyFit();
+          };
+
+          // Lighting setup — brighter + a front fill so the frame reads
+          // prominently (catches highlights on metal/plastic instead of looking flat).
+          scene.add(new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1.1));
+          scene.add(new THREE.AmbientLight(0xffffff, 1.5));
+          const dirLight = new THREE.DirectionalLight(0xffffff, 1.6);
           dirLight.position.set(0, 1, 1);
           scene.add(dirLight);
+          // Camera-facing fill light — puts a clean highlight on the front frame.
+          const fillLight = new THREE.DirectionalLight(0xffffff, 1.0);
+          fillLight.position.set(0, 0.2, 1.5);
+          scene.add(fillLight);
 
-          // Face anchor at nose bridge
+          // Face anchor at nose bridge — the glasses parent (anchors[0]).
           mindarInstance.addAnchor(168);
+          // Top-of-ear landmarks (where the ear meets the head — the exact point
+          // real glasses arms rest on). No meshes attached; we only read their
+          // tracked positions each frame to aim the temple tips there.
+          // 127 = top of left ear, 356 = top of right ear. (The tragion points
+          // 234/454 sit lower/forward at ear-canal level, so the tips landed
+          // below the resting point.) anchors[1]=left, anchors[2]=right.
+          mindarInstance.addAnchor(127);
+          mindarInstance.addAnchor(356);
 
-          // Face mesh occluder — tracks actual face shape for realistic
-          // temple arm hiding (far superior to a static sphere).
+          // Pose anchors (eyes/forehead/chin) — read each frame to build the head-pose basis
+          // that drives glasses placement. Created unconditionally.
+          {
+            const poseAnchors: Record<string, any> = {};
+            for (const [key, idx] of Object.entries(POSE_LANDMARKS)) {
+              poseAnchors[key] = mindarInstance.addAnchor(idx);
+            }
+            poseAnchorsRef.current = poseAnchors;
+          }
+
+          // Read-only anchors used purely to sample landmark positions for face-shape
+          // classification (no meshes attached). Reuses MindAR's MediaPipe face mesh —
+          // no second tracker, so it adds no meaningful tracking cost.
+          if (onFaceShapeDetect) {
+            const shapeAnchors: Record<string, any> = {};
+            for (const [key, idx] of Object.entries(FACE_SHAPE_LANDMARKS)) {
+              shapeAnchors[key] = mindarInstance.addAnchor(idx);
+            }
+            shapeAnchorsRef.current = shapeAnchors;
+          }
+
+          // Face mesh occluder — hides the temple arms where they pass behind the
+          // head. polygonOffset recesses its depth slightly so it stops clipping the
+          // FRONT frame and lens edges at the sides of the face (the "cut off left/
+          // right" artifact) while still occluding anything genuinely behind it.
           const faceMesh = mindarInstance.addFaceMesh();
           faceMesh.material = new THREE.MeshBasicMaterial({
             colorWrite: false,
             depthWrite: true,
             depthTest: true,
             side: THREE.DoubleSide,
+            polygonOffset: true,
+            polygonOffsetFactor: 2,
+            polygonOffsetUnits: 4,
           });
           faceMesh.renderOrder = 0;
           faceMesh.visible = true;
@@ -235,20 +631,58 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             loadFrame(frameSrc);
           }
 
-          // Start MindAR face tracking
-          await mindarInstance.start();
+          // ── Start tracking with a container-shaped, mobile-friendly camera stream ──
+          // MindAR builds its getUserMedia constraints internally and requests no resolution
+          // at all, so phones hand back 720p/1080p LANDSCAPE. Cover-fitting a landscape stream
+          // into a portrait container crops away most of the width, which is why the face was
+          // squeezed into a sliver. We request a stream whose orientation matches the container
+          // (portrait on phones) at a modest resolution — this both fills the screen properly
+          // and roughly halves per-frame tracking cost.
+          const portrait = container.clientHeight >= container.clientWidth;
+          const idealLong = 960;
+          const idealShort = 720;
+          const nativeGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+          navigator.mediaDevices.getUserMedia = async (constraints: MediaStreamConstraints) => {
+            if (!constraints?.video || typeof constraints.video !== "object") {
+              return nativeGetUserMedia(constraints);
+            }
+            // Everything added here is an `ideal` (soft) constraint, so a device that
+            // can't match still returns its best effort rather than throwing. The retry
+            // guards against drivers that reject the request outright anyway.
+            try {
+              return await nativeGetUserMedia({
+                ...constraints,
+                video: {
+                  ...constraints.video,
+                  width: { ideal: portrait ? idealShort : idealLong },
+                  height: { ideal: portrait ? idealLong : idealShort },
+                  frameRate: { ideal: 30 },
+                },
+              });
+            } catch (e) {
+              console.warn("Constrained camera request failed; falling back to defaults", e);
+              return nativeGetUserMedia(constraints);
+            }
+          };
+          try {
+            await mindarInstance.start();
+          } finally {
+            navigator.mediaDevices.getUserMedia = nativeGetUserMedia;
+          }
 
           if (cancelled) return;
           reportStatus("ready");
 
           // ── Fix element layering ──────────────────────────────────────
-          // MindAR sets video z-index to -2 which hides it behind the
-          // container's background in a React component tree. Override
-          // the stacking so video → canvas → CSS renderer layer correctly.
           const video = mindarInstance.video;
           if (video) {
             video.style.zIndex = "0";
-            // Ensure video actually plays (some browsers need explicit play)
+            video.style.filter = CAMERA_FILTER; // crisp "enhance" look on the feed
+            // Safety net: if applyFit ever bails before the stream reports its dimensions,
+            // the browser still cover-crops the feed instead of leaving a raw, oversized
+            // element pinned to a corner. Once applyFit sizes the box to the video's exact
+            // aspect this is a no-op.
+            video.style.objectFit = "cover";
             video.play().catch(() => {});
           }
           if (renderer.domElement) {
@@ -258,39 +692,181 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             mindarInstance.cssRenderer.domElement.style.zIndex = "2";
           }
 
-          // Force a resize after start so canvas fills the container
-          window.dispatchEvent(new Event("resize"));
-          setTimeout(() => window.dispatchEvent(new Event("resize")), 200);
-          setTimeout(() => window.dispatchEvent(new Event("resize")), 500);
-          setTimeout(() => window.dispatchEvent(new Event("resize")), 1000);
+          // ── Keep the fit correct for the life of the session ───────────────────
+          // A window "resize" is NOT emitted when the container changes size for layout
+          // reasons — the frame carousel populating, the adjustment drawer opening, the
+          // studio reflowing. Previously the fit was only nudged by a few setTimeouts in
+          // the first second and then frozen forever against a stale container size.
+          // A ResizeObserver on the container covers every case, layout or viewport.
+          mindarInstance._resize();
 
-          // Animation loop with smooth tracking (matches main.js logic)
+          const scheduleFit = () => {
+            if (cancelled) return;
+            requestAnimationFrame(() => {
+              if (!cancelled) applyFit();
+            });
+          };
+
+          const resizeObserver = new ResizeObserver(scheduleFit);
+          resizeObserver.observe(container);
+          cleanupFns.push(() => resizeObserver.disconnect());
+
+          // The projection/buffer must be recomputed when the STREAM's dimensions change
+          // (orientation change on mobile re-negotiates the track), not just the container.
+          // `loadedmetadata` is what makes videoWidth/videoHeight readable at all — without
+          // it, a fit attempted before metadata arrives bails out and never retries.
+          const onVideoResize = () => { if (!cancelled) mindarInstance._resize(); };
+          for (const evt of ["resize", "loadedmetadata", "playing"]) {
+            mindarInstance.video?.addEventListener(evt, onVideoResize);
+            cleanupFns.push(() => mindarInstance.video?.removeEventListener(evt, onVideoResize));
+          }
+
+          window.addEventListener("orientationchange", scheduleFit);
+          cleanupFns.push(() => window.removeEventListener("orientationchange", scheduleFit));
+          window.addEventListener("resize", scheduleFit);
+          cleanupFns.push(() => window.removeEventListener("resize", scheduleFit));
+
+          // Three.js clock to compute delta time for frame-rate independence
+          const clock = new THREE.Clock();
+          // Scratch vectors reused each frame for the ear auto-fit (no per-frame allocation).
+          const _earL = new THREE.Vector3();
+          const _earR = new THREE.Vector3();
+          const _shapeVec = new THREE.Vector3();
+          // Scratch objects for the head-pose placement (no per-frame allocation).
+          const _eyeL = new THREE.Vector3();
+          const _eyeR = new THREE.Vector3();
+          const _fore = new THREE.Vector3();
+          const _chin = new THREE.Vector3();
+          const _right = new THREE.Vector3();
+          const _up = new THREE.Vector3();
+          const _fwd = new THREE.Vector3();
+          const _eyeMid = new THREE.Vector3();
+          const _earMid = new THREE.Vector3();
+          const _pos = new THREE.Vector3();
+          const _basis = new THREE.Matrix4();
+          const _qTarget = new THREE.Quaternion();
+          const _qUser = new THREE.Quaternion();
+          const _euler = new THREE.Euler();
+
+          // Sample the shape landmarks every few frames, classify, and emit a shape only
+          // once it has held a clear majority across the rolling window.
+          const sampleFaceShape = () => {
+            const sa = shapeAnchorsRef.current;
+            if (!onFaceShapeDetect || !sa) return;
+            const pts: Record<string, { x: number; y: number; z: number }> = {};
+            for (const key of Object.keys(FACE_SHAPE_LANDMARKS)) {
+              const g = sa[key]?.group;
+              if (!g || !g.visible) return; // a needed landmark isn't tracked right now
+              g.getWorldPosition(_shapeVec);
+              pts[key] = { x: _shapeVec.x, y: _shapeVec.y, z: _shapeVec.z };
+            }
+            const shape = classifyFaceShape(pts as any);
+            if (!shape) return;
+            const buf = shapeSamplesRef.current;
+            buf.push(shape);
+            if (buf.length > 45) buf.shift();
+            if (buf.length < 20) return;
+            const counts = new Map<string, number>();
+            let best: string | null = null;
+            let bestN = 0;
+            for (const s of buf) {
+              const n = (counts.get(s) ?? 0) + 1;
+              counts.set(s, n);
+              if (n > bestN) { bestN = n; best = s; }
+            }
+            if (best && bestN / buf.length >= 0.55 && best !== lastShapeRef.current) {
+              lastShapeRef.current = best;
+              onFaceShapeDetect(best as FaceShape);
+            }
+          };
+
+          // ── Animation loop ─────────────────────────────────────────────
+          // Face tracking is handled entirely by MindAR which sets the
+          // anchor.group.matrix directly each frame. That provides the
+          // position + rotation + scale relative to the face.
+          //
+          // We calculate delta time to ensure our interpolation is 
+          // frame-rate independent, allowing butter-smooth updates on both
+          // standard 30-60Hz mobile screens and premium 90-120Hz displays.
           renderer.setAnimationLoop(() => {
             const anchor = mindarInstance.anchors?.[0];
             const glasses = glassesRef.current;
 
-            if (glasses && anchor?.group?.visible) {
-              const faceScale = anchor.group.scale.x;
+            // Face-shape sampling runs independently of whether a frame model is loaded,
+            // throttled to ~every 6th frame to keep it cheap.
+            if (anchor?.group?.visible) {
+              shapeFrameRef.current++;
+              if (shapeFrameRef.current % 6 === 0) sampleFaceShape();
+            }
 
-              // Smooth scale (includes user scaleOffset from Fine-tune slider)
-              smoothRef.current.scale = THREE.MathUtils.lerp(
-                smoothRef.current.scale,
-                baseScaleRef.current * faceScale * offsetsRef.current.scale,
-                0.15,
-              );
-              glasses.scale.setScalar(smoothRef.current.scale);
+            const pose = poseAnchorsRef.current;
+            const eyeLg = pose?.eyeL?.group;
+            const eyeRg = pose?.eyeR?.group;
+            const foreg = pose?.foreheadTop?.group;
+            const ching = pose?.chin?.group;
+            const poseReady =
+              !!glasses && !!eyeLg?.visible && !!eyeRg?.visible && !!foreg?.visible && !!ching?.visible;
 
-              // Smooth Y position
-              smoothRef.current.y = THREE.MathUtils.lerp(smoothRef.current.y, -0.065, 0.15);
-              glasses.position.y = smoothRef.current.y;
+            if (poseReady) {
+              const adj = adjustmentsRef.current;
 
-              // Smooth Z position (adapts to face distance)
-              const targetZ = 0.015 + (faceScale - 1) * 0.008;
-              smoothRef.current.z = THREE.MathUtils.lerp(smoothRef.current.z, targetZ, 0.15);
-              glasses.position.z = smoothRef.current.z;
+              // Frame-rate-independent smoothing factor.
+              const clampedDt = Math.min(clock.getDelta(), 0.1);
+              const k = 1.0 - Math.exp(-AR.SMOOTH * clampedDt);
 
-              // Rotation is handled entirely by MindAR's anchor matrix —
-              // no per-frame corrections needed (they fight head tracking).
+              // ── Head-pose basis from tracked landmark POSITIONS ──────────
+              // Positions are what MediaPipe/MindAR track most reliably (far more than a
+              // single anchor's rotation), so a basis built from them locks the frame to
+              // the face through pitch/roll/yaw — fixing the "floats down on tilt".
+              eyeLg.getWorldPosition(_eyeL);
+              eyeRg.getWorldPosition(_eyeR);
+              foreg.getWorldPosition(_fore);
+              ching.getWorldPosition(_chin);
+
+              _right.subVectors(_eyeR, _eyeL).normalize();        // ear-to-ear (X)
+              _up.subVectors(_fore, _chin).normalize();           // chin-to-forehead (Y)
+              _fwd.crossVectors(_right, _up).normalize().multiplyScalar(AR.FWD_SIGN); // face normal (Z)
+              _up.crossVectors(_fwd, _right).normalize();         // re-orthonormalize
+              _basis.makeBasis(_right, _up, _fwd);
+              _qTarget.setFromRotationMatrix(_basis);
+              // User rotation nudges (Tilt/Yaw/Roll sliders) applied in head-local space.
+              _qUser.setFromEuler(_euler.set(adj.rotationX, adj.rotationY, adj.rotationZ, "XYZ"));
+              _qTarget.multiply(_qUser);
+
+              const eyeDist = _eyeL.distanceTo(_eyeR);
+
+              // Width scales with the eyes → constant real-world fit at any camera distance.
+              const targetScale = (eyeDist * AR.SCALE_K / rawWidthRef.current) * adj.scale;
+
+              // ── Auto-stretch temple length to reach the ears ─────────────
+              const earLg = mindarInstance.anchors?.[1]?.group;
+              const earRg = mindarInstance.anchors?.[2]?.group;
+              if (earLg?.visible && earRg?.visible && rawDepthRef.current > 1e-6 && targetScale > 1e-6) {
+                earLg.getWorldPosition(_earL);
+                earRg.getWorldPosition(_earR);
+                _earMid.addVectors(_earL, _earR).multiplyScalar(0.5);
+                _eyeMid.addVectors(_eyeL, _eyeR).multiplyScalar(0.5);
+                const reach = _earMid.distanceTo(_eyeMid);          // world distance front→ear
+                const nativeArm = rawDepthRef.current * targetScale; // world arm length at scale 1×Z
+                if (nativeArm > 1e-6) {
+                  const solved = THREE.MathUtils.clamp(reach / nativeArm, AR.TEMPLE_MIN, AR.TEMPLE_MAX);
+                  templeZRef.current = THREE.MathUtils.lerp(templeZRef.current, solved, k);
+                }
+              }
+              const templeZ = templeZRef.current * adj.templeLength;
+
+              // ── Position: eye midpoint + head-space seat offsets ─────────
+              _pos.addVectors(_eyeL, _eyeR).multiplyScalar(0.5);
+              _pos.addScaledVector(_up, -(AR.SEAT_DOWN * eyeDist) + adj.positionY); // down toward nose
+              _pos.addScaledVector(_fwd, AR.SEAT_FWD * eyeDist + adj.positionZ);    // forward off brow
+              _pos.addScaledVector(_right, adj.positionX);
+
+              // Smooth toward the target pose (kills residual jitter without adding lag).
+              glasses.position.lerp(_pos, k);
+              glasses.quaternion.slerp(_qTarget, k);
+              const sPrev = glasses.scale.x;
+              const s = THREE.MathUtils.lerp(sPrev, targetScale, k);
+              glasses.scale.set(s, s, s * templeZ);
 
               reportStatus("tracking");
             } else if (anchor && !anchor.group.visible) {
@@ -311,11 +887,17 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
 
       return () => {
         cancelled = true;
+        for (const fn of cleanupFns) {
+          try { fn(); } catch { /* ignore cleanup errors */ }
+        }
+        cleanupFns.length = 0;
         if (mindarInstance) {
           try {
+            mindarInstance.renderer?.setAnimationLoop(null);
             mindarInstance.stop();
           } catch { /* ignore cleanup errors */ }
         }
+        applyFitRef.current = null;
         mindarRef.current = null;
         glassesRef.current = null;
       };
@@ -334,19 +916,6 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
 
     return (
       <div ref={containerRef} className="relative h-full w-full overflow-hidden" style={{ background: "transparent" }}>
-        {overlay.status === "loading" && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div className="flex flex-col items-center gap-4">
-              <div className="relative h-12 w-12">
-                <div className="absolute inset-0 animate-spin rounded-full border-2 border-white/20 border-t-purple-400" />
-                <div className="absolute inset-2 animate-spin rounded-full border-2 border-transparent border-t-pink-400" style={{ animationDirection: "reverse", animationDuration: "0.7s" }} />
-              </div>
-              <p className="rounded-2xl bg-slate-900/90 px-5 py-2.5 text-sm font-semibold text-white shadow-xl backdrop-blur-md">
-                {overlay.detail ?? "Starting AR..."}
-              </p>
-            </div>
-          </div>
-        )}
         {overlay.status === "error" && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/80 p-6 text-center">
             <div className="max-w-sm rounded-2xl border border-red-500/20 bg-slate-900/95 px-6 py-5 shadow-2xl">

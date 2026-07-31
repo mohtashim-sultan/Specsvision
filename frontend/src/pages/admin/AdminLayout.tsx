@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
-import { Eye, LayoutDashboard, Package, Receipt, LogOut, Store, ChevronRight, Menu, X, Bell } from "lucide-react";
+import { Eye, LayoutDashboard, Package, Receipt, LogOut, Store, ChevronRight, Menu, X, Users, BarChart3 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import ThemeToggle from "../../components/common/ThemeToggle";
 
@@ -8,6 +8,8 @@ const navItems = [
   { to: "/admin", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/admin/products", label: "Products", icon: Package, end: false },
   { to: "/admin/orders", label: "Orders", icon: Receipt, end: false },
+  { to: "/admin/users", label: "Users", icon: Users, end: false },
+  { to: "/admin/analytics", label: "Analytics", icon: BarChart3, end: false },
 ];
 
 const navCls = ({ isActive }: { isActive: boolean }) =>
@@ -57,6 +59,8 @@ export default function AdminLayout() {
     if (path === "/admin") return "Dashboard";
     if (path.includes("/products")) return "Products";
     if (path.includes("/orders")) return "Orders";
+    if (path.includes("/users")) return "Users";
+    if (path.includes("/analytics")) return "Analytics";
     return "Admin";
   };
 
