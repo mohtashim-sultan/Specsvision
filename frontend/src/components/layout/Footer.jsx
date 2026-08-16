@@ -86,7 +86,7 @@ export default function Footer() {
               {['Privacy Policy', 'Terms of Service'].map(label => (
                 <a
                   key={label}
-                  href="#"
+                  href="/#"
                   className="transition-colors text-sm"
                   style={{ color: 'var(--text-muted)' }}
                   onMouseEnter={e => e.currentTarget.style.color = 'var(--footer-text)'}

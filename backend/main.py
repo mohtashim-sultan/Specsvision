@@ -11,6 +11,7 @@ from routes import (
     cart_router,
     checkout_router,
     products_router,
+    stripe_router,
     wishlist_router,
 )
 
@@ -50,6 +51,7 @@ app.include_router(auth_router, prefix="/api")
 app.include_router(products_router, prefix="/api")
 app.include_router(cart_router, prefix="/api")
 app.include_router(checkout_router, prefix="/api")
+app.include_router(stripe_router, prefix="/api")
 app.include_router(wishlist_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
 

@@ -27,6 +27,13 @@ export async function setCartLineQuantity(productId: number, quantity: number): 
   return addCartItem(productId, quantity);
 }
 
+export function createPaymentIntentRequest(couponCode?: string | null): Promise<{ client_secret: string; amount: number }> {
+  return apiRequest<{ client_secret: string; amount: number }>("/api/checkout/create-payment-intent", {
+    method: "POST",
+    body: JSON.stringify({ coupon_code: couponCode ?? null }),
+  });
+}
+
 export function checkoutCart(payload: CheckoutPayload): Promise<CheckoutResult> {
   return apiRequest<CheckoutResult>("/api/checkout", {
     method: "POST",

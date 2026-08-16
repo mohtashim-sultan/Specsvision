@@ -31,7 +31,7 @@ export default function Signup() {
     setIsLoading(true);
     try {
       await register({ email, password, name });
-      navigate('/');
+      navigate(`/verify-email?email=${encodeURIComponent(email)}`);
     } catch (err) {
       setError(err.message || 'Signup failed');
     } finally {

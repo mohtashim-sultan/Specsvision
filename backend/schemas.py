@@ -42,6 +42,20 @@ class TokenWithRole(Token):
     role: Literal["user", "admin"]
 
 
+class SignupResponse(BaseModel):
+    message: str
+    email: str
+
+
+class VerifyEmailRequest(BaseModel):
+    email: EmailStr
+    otp: str = Field(min_length=6, max_length=6)
+
+
+class ResendOtpRequest(BaseModel):
+    email: EmailStr
+
+
 class ProductColor(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     hex: str = Field(pattern=r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
@@ -154,18 +168,18 @@ class ShippingAddress(BaseModel):
     phone: str = Field(min_length=3, max_length=64)
 
 
-class PaymentDetails(BaseModel):
-    """Simulated card capture. Only the last 4 digits are ever retained."""
+class CreatePaymentIntentRequest(BaseModel):
+    coupon_code: str | None = Field(default=None, max_length=64)
 
-    card_number: str = Field(min_length=12, max_length=19)
-    card_expiry: str = Field(pattern=r"^\d{2}/\d{2}$")
-    card_cvv: str = Field(min_length=3, max_length=4)
-    simulate_success: bool = True
+
+class CreatePaymentIntentResponse(BaseModel):
+    client_secret: str
+    amount: int  # in cents
 
 
 class CheckoutRequest(BaseModel):
     shipping: ShippingAddress
-    payment: PaymentDetails
+    payment_intent_id: str = Field(min_length=1)
     coupon_code: str | None = Field(default=None, max_length=64)
 
 

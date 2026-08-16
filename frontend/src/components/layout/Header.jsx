@@ -32,16 +32,16 @@ export default function Header() {
           boxShadow: '0 1px 20px rgba(0,0,0,0.04)',
         }}
       >
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-14 sm:h-16">
+        <div className="max-w-7xl mx-auto px-2 sm:px-4 md:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-14 sm:h-16 min-w-0 gap-1">
             {/* Logo */}
-            <div className="flex items-center space-x-1.5 sm:space-x-2 flex-shrink-0">
-              <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-1.5 sm:p-2 rounded-xl shadow-md shadow-purple-500/20">
+            <div className="flex items-center space-x-1.5 sm:space-x-2 flex-shrink-0 min-w-0">
+              <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-1.5 sm:p-2 rounded-xl shadow-md shadow-purple-500/20 shrink-0">
                 <Eye className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 text-white" />
               </div>
               <Link
                 to="/"
-                className="text-lg sm:text-xl md:text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent whitespace-nowrap"
+                className="text-base sm:text-xl md:text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent whitespace-nowrap truncate"
               >
                 SpecsVision
               </Link>
@@ -94,31 +94,17 @@ export default function Header() {
             </nav>
 
             {/* Action Icons */}
-            <div className="flex items-center space-x-1 sm:space-x-2">
+            <div className="flex items-center gap-0.5 sm:gap-1.5 shrink-0">
               {isAuthenticated ? (
                 <div className="hidden sm:flex items-center gap-2">
-                  {admin ? (
-                    <Link
-                      to="/admin"
-                      className="text-xs font-semibold max-w-[120px] truncate px-2.5 py-1.5 rounded-lg transition-all"
-                      style={{ color: 'var(--text-nav)' }}
-                      onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-accent)'; e.currentTarget.style.backgroundColor = 'var(--surface-bg-secondary)'; }}
-                      onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-nav)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
-                    >
-                      {admin.email}
-                    </Link>
-                  ) : (
-                    <Link
-                      to="/profile"
-                      className="flex items-center gap-1.5 text-xs font-semibold max-w-[120px] truncate px-2.5 py-1.5 rounded-lg transition-all"
-                      style={{ color: 'var(--text-nav)' }}
-                      onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-accent)'; e.currentTarget.style.backgroundColor = 'var(--surface-bg-secondary)'; }}
-                      onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-nav)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
-                    >
-                      <User className="w-3.5 h-3.5" style={{ color: 'var(--text-accent)' }} />
-                      {user?.full_name || user?.email || 'Profile'}
-                    </Link>
-                  )}
+                  <Link
+                    to={admin ? "/admin" : "/profile"}
+                    className="flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 text-white font-bold text-xs shadow-md hover:scale-105 transition-transform"
+                    title={admin ? (admin.full_name || admin.email) : (user?.full_name || user?.email || 'Profile')}
+                    aria-label="User profile"
+                  >
+                    {(admin ? (admin.full_name || admin.email || 'A') : (user?.full_name || user?.email || 'U')).charAt(0).toUpperCase()}
+                  </Link>
                   <button
                     onClick={logout}
                     className="text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-all"
@@ -147,15 +133,15 @@ export default function Header() {
               {!admin && (
                 <Link
                   to="/compare"
-                  className="hidden sm:flex p-2 transition-all relative min-w-[44px] min-h-[44px] items-center justify-center rounded-lg"
+                  className="flex p-1.5 sm:p-2 transition-all relative min-w-[36px] sm:min-w-[44px] min-h-[36px] sm:min-h-[44px] items-center justify-center rounded-lg"
                   style={{ color: 'var(--text-nav)' }}
                   onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-accent)'; e.currentTarget.style.backgroundColor = 'var(--surface-bg-secondary)'; }}
                   onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-nav)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
                   aria-label="Compare frames"
                 >
-                  <GitCompare className="w-5 h-5" />
+                  <GitCompare className="w-4 h-4 sm:w-5 sm:h-5" />
                   {compareCount > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-[10px] sm:text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center font-semibold shadow-md">
+                    <span className="absolute -top-0.5 -right-0.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-semibold shadow-md">
                       {compareCount}
                     </span>
                   )}
@@ -165,15 +151,15 @@ export default function Header() {
               {!admin && (
                 <Link
                   to="/wishlist"
-                  className="p-2 transition-all relative min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg"
+                  className="p-1.5 sm:p-2 transition-all relative min-w-[36px] sm:min-w-[44px] min-h-[36px] sm:min-h-[44px] flex items-center justify-center rounded-lg"
                   style={{ color: 'var(--text-nav)' }}
                   onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-accent)'; e.currentTarget.style.backgroundColor = 'var(--surface-bg-secondary)'; }}
                   onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-nav)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
                   aria-label="Wishlist"
                 >
-                  <Heart className="w-5 h-5" />
+                  <Heart className="w-4 h-4 sm:w-5 sm:h-5" />
                   {wishlistCount > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-[10px] sm:text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center font-semibold shadow-md">
+                    <span className="absolute -top-0.5 -right-0.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-semibold shadow-md">
                       {wishlistCount > 9 ? '9+' : wishlistCount}
                     </span>
                   )}
@@ -182,15 +168,15 @@ export default function Header() {
 
               <Link
                 to="/cart"
-                className={`p-2 transition-all relative min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg ${admin ? 'pointer-events-none opacity-40' : ''}`}
+                className={`p-1.5 sm:p-2 transition-all relative min-w-[36px] sm:min-w-[44px] min-h-[36px] sm:min-h-[44px] flex items-center justify-center rounded-lg ${admin ? 'pointer-events-none opacity-40' : ''}`}
                 style={{ color: 'var(--text-nav)' }}
                 onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-accent)'; e.currentTarget.style.backgroundColor = 'var(--surface-bg-secondary)'; }}
                 onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-nav)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
                 aria-label="Shopping cart"
               >
-                <ShoppingCart className="w-5 h-5" />
+                <ShoppingCart className="w-4 h-4 sm:w-5 sm:h-5" />
                 {cartCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-[10px] sm:text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center font-semibold shadow-md">
+                  <span className="absolute -top-0.5 -right-0.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-semibold shadow-md">
                     {cartCount > 9 ? '9+' : cartCount}
                   </span>
                 )}
@@ -199,13 +185,13 @@ export default function Header() {
               {/* Mobile Menu Button */}
               <button
                 onClick={() => setMobileMenuOpen(true)}
-                className="md:hidden p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg transition-all"
+                className="md:hidden p-1.5 sm:p-2 min-w-[36px] sm:min-w-[44px] min-h-[36px] sm:min-h-[44px] flex items-center justify-center rounded-lg transition-all shrink-0"
                 style={{ color: 'var(--text-nav)' }}
                 onMouseEnter={e => e.currentTarget.style.color = 'var(--text-accent)'}
                 onMouseLeave={e => e.currentTarget.style.color = 'var(--text-nav)'}
                 aria-label="Menu"
               >
-                <Menu className="w-6 h-6" />
+                <Menu className="w-5 h-5 sm:w-6 sm:h-6" />
               </button>
             </div>
           </div>
