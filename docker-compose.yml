@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: specsvision-db
+    restart: always
+    environment:
+      POSTGRES_USER: specsvision
+      POSTGRES_PASSWORD: specsvision_secure_password
+      POSTGRES_DB: specsvision
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: specsvision-backend
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql+psycopg://specsvision:specsvision_secure_password@db:5432/specsvision
+      - SECRET_KEY=change-this-in-production-to-something-secure
+      - ENVIRONMENT=production
+      - CORS_ORIGINS=http://localhost,http://localhost:3000,http://127.0.0.1
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    volumes:
+      - backend_uploads:/app/uploads
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - REACT_APP_API_URL=/
+    container_name: specsvision-frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  backend_uploads:

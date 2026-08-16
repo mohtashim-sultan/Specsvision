@@ -175,12 +175,7 @@ export type CheckoutPayload = {
     email: string;
     phone: string;
   };
-  payment: {
-    card_number: string;
-    card_expiry: string;
-    card_cvv: string;
-    simulate_success: boolean;
-  };
+  payment_intent_id: string;
   coupon_code?: string | null;
 };
 

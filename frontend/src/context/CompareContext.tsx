@@ -32,17 +32,22 @@ export function CompareProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
   }, [ids]);
 
-  const toggle = useCallback((id: number, name?: string) => {
-    setIds((prev) => {
-      if (prev.includes(id)) return prev.filter((x) => x !== id);
-      if (prev.length >= MAX_COMPARE) {
-        toast.error(`You can compare up to ${MAX_COMPARE} frames at once`);
-        return prev;
+  const toggle = useCallback(
+    (id: number, name?: string) => {
+      if (ids.includes(id)) {
+        setIds((prev) => prev.filter((x) => x !== id));
+        toast.success(`Removed${name ? ` ${name}` : ""} from compare`);
+      } else {
+        if (ids.length >= MAX_COMPARE) {
+          toast.error(`You can compare up to ${MAX_COMPARE} frames at once`);
+          return;
+        }
+        setIds((prev) => [...prev, id]);
+        toast.success(`Added${name ? ` ${name}` : ""} to compare`);
       }
-      toast.success(`Added${name ? ` ${name}` : ""} to compare`);
-      return [...prev, id];
-    });
-  }, []);
+    },
+    [ids],
+  );
 
   const remove = useCallback((id: number) => setIds((prev) => prev.filter((x) => x !== id)), []);
   const clear = useCallback(() => setIds([]), []);

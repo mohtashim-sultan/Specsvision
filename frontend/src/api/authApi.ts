@@ -12,14 +12,38 @@ export async function loginRequest(email: string, password: string): Promise<Tok
   return data;
 }
 
+export interface SignupResponseData {
+  message: string;
+  email: string;
+}
+
 export async function signupRequest(
   email: string,
   password: string,
   full_name?: string | null,
-): Promise<User> {
-  return apiRequest<User>("/api/auth/signup", {
+): Promise<SignupResponseData> {
+  return apiRequest<SignupResponseData>("/api/auth/signup", {
     method: "POST",
     body: JSON.stringify({ email, password, full_name: full_name || null }),
+    auth: false,
+  });
+}
+
+export async function verifyEmailRequest(email: string, otp: string): Promise<TokenResponse> {
+  const data = await apiRequest<TokenResponse>("/api/auth/verify-email", {
+    method: "POST",
+    body: JSON.stringify({ email, otp }),
+    auth: false,
+  });
+  setStoredToken(data.access_token);
+  setStoredRole(data.role);
+  return data;
+}
+
+export async function resendOtpRequest(email: string): Promise<void> {
+  await apiRequest<void>("/api/auth/resend-otp", {
+    method: "POST",
+    body: JSON.stringify({ email }),
     auth: false,
   });
 }
