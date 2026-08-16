@@ -1,4 +1,4 @@
-# SpecsVision Monorepo
+# SpecsVision
 
 This repository is organized into separate frontend and backend applications.
 
