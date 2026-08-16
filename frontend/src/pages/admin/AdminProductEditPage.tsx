@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import { createAdminProduct, fetchAdminProducts, updateAdminProduct, uploadAdminImage } from "../../api/adminApi";
 import { fetchProduct } from "../../api/productsApi";
 import { API_BASE } from "../../config/env";
+import ModelViewer from "../../components/ModelViewer";
 
 const CATEGORIES = ["", "Aviator", "Wayfarer", "Round", "Cat-Eye", "Premium", "Essential", "Tech", "Limited"];
 
@@ -100,14 +101,13 @@ function ImageUploadField({ label, description, value, onChange, required, model
       <p className="text-xs text-on-surface-variant/80">{description}</p>
 
       {value ? (
-        <div className="relative mt-2 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest p-4 shadow-inner">
+        <div className="relative mt-2 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-inner">
           {is3D ? (
-            <div className="flex flex-col items-center gap-2 text-on-surface-variant text-center">
-              <svg className="h-10 w-10 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5" />
-              </svg>
-              <span className="text-xs font-semibold max-w-[180px] truncate">{value.split("/").pop()}</span>
-              <span className="rounded bg-primary-container px-2 py-0.5 text-[10px] font-bold text-on-primary-container uppercase">3D Glasses Model</span>
+            <div className="relative w-full h-full">
+              <ModelViewer src={fullUrl} alt={label} minHeight="100%" className="w-full h-full" />
+              <div className="absolute top-2 left-2 z-10 rounded bg-primary-container px-2 py-0.5 text-[10px] font-bold text-on-primary-container uppercase shadow-sm">
+                3D Model Active
+              </div>
             </div>
           ) : (
             <img src={fullUrl} alt={label} className="h-full w-full object-contain p-2" />
@@ -266,7 +266,6 @@ export default function AdminProductEditPage() {
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
   const [stock, setStock] = useState("0");
-  const [imageUrl, setImageUrl] = useState("");
   const [frontView, setFrontView] = useState("");
   const [sideView, setSideView] = useState("");
   const [lifestyleImages, setLifestyleImages] = useState<string[]>([]);
@@ -317,7 +316,6 @@ export default function AdminProductEditPage() {
         setDescription(p.description || "");
         setPrice(String(p.price));
         setStock(String(p.stock_quantity));
-        setImageUrl(p.image_url || "");
         setFrontView(p.front_view || "");
         setSideView(p.side_view || "");
         setLifestyleImages(parseLifestyle(p.lifestyle_images));
@@ -339,7 +337,6 @@ export default function AdminProductEditPage() {
             setDescription(p.description || "");
             setPrice(String(p.price));
             setStock(String(p.stock_quantity));
-            setImageUrl(p.image_url || "");
             setFrontView(p.front_view || "");
             setSideView(p.side_view || "");
             setLifestyleImages(parseLifestyle(p.lifestyle_images));
@@ -523,28 +520,18 @@ export default function AdminProductEditPage() {
           </div>
           <div className="md:col-span-2 grid grid-cols-1 gap-md sm:grid-cols-2">
             <ImageUploadField
-              label="Front View (3D Model)"
-              description="3-D glasses model (.glb, .gltf). Required for virtual try-on."
+              label="3D Glasses Model (.glb)"
+              description="Upload the 3D model file (.glb / .gltf). Powers both the 3D rotating showcase and virtual try-on."
               value={frontView}
               onChange={setFrontView}
               required
               modelOnly
             />
             <ImageUploadField
-              label="Thumbnail"
-              description="Product image displayed in listing grids and catalogs."
+              label="Frame Thumbnail Image (.jpg, .png)"
+              description="Preview photo displayed in the Virtual Try-On frame carousel and product catalogs."
               value={thumbnail}
               onChange={setThumbnail}
-            />
-            <ImageUploadField
-              label="Side View"
-              description="Alternative angle view displayed on the product page."
-              value={sideView}
-              onChange={setSideView}
-            />
-            <LifestyleImagesUploadField
-              values={lifestyleImages}
-              onChange={setLifestyleImages}
             />
           </div>
           <div className="md:col-span-2">

@@ -33,7 +33,7 @@ interface Adjustments {
 // to 0.82, which shrank the composited feed and left black bars on every screen — worst on
 // phones, where it pushed the face into a small box. faceStretch 1.0 keeps the feed
 // undistorted; both remain user-adjustable.
-const BASELINE: Adjustments = { scale: 1.0, templeLength: 1.0, faceStretch: 1.0, zoom: 1.0, x: 0.0, y: 0.0, z: 0.0, rx: 0.0, ry: 0.0, rz: 0.0 };
+const BASELINE: Adjustments = { scale: 0.87, templeLength: 1.0, faceStretch: 1.0, zoom: 1.0, x: 0.0, y: 0.0, z: 0.0, rx: 0.0, ry: 0.0, rz: 0.0 };
 const DEFAULT_ADJUSTMENTS: Record<string, Adjustments> = {
   default:  { ...BASELINE },
   wayfarer: { ...BASELINE },
@@ -80,6 +80,7 @@ export default function VirtualTryOnPage() {
   const [showAdjust,         setShowAdjust]         = useState(false);
   const [adjustTab,          setAdjustTab]          = useState<"position" | "rotation" | "scale">("position");
   const [adjustments,        setAdjustments]        = useState<Adjustments>(DEFAULT_ADJUSTMENTS.default);
+  const [activePreset,       setActivePreset]       = useState<string | null>(null);
 
   // Fetch Products
   useEffect(() => {
@@ -173,18 +174,32 @@ export default function VirtualTryOnPage() {
 
   const handleSnapshot = () => {
     const dataUrl = viewerRef.current?.captureSnapshot();
-    if (!dataUrl) { toast.error("Snapshot unavailable — wait for camera"); return; }
-    const a = document.createElement("a");
-    a.href = dataUrl;
-    a.download = `specsvision-tryon-${selected?.sku ?? "frame"}.png`;
-    a.click();
-    toast.success("📸 Snapshot saved!");
+    if (!dataUrl || dataUrl === "data:," || dataUrl.length < 500) {
+      toast.error("Snapshot unavailable — wait for camera");
+      return;
+    }
+
+    try {
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = `specsvision-tryon-${selected?.sku ?? "frame"}.png`;
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success("📸 Snapshot saved!");
+    } catch (err) {
+      console.error("Snapshot download error:", err);
+      toast.error("Could not save snapshot");
+    }
   };
 
   const handleStatusChange = useCallback((s: TryOnStatus) => setArStatus(s), []);
 
   // Update a single adjustment value and save to LocalStorage
+  // Also clears the active preset since the user is now manually tweaking.
   const updateAdjustment = (key: keyof Adjustments, value: number) => {
+    setActivePreset(null);
     setAdjustments((prev) => {
       const next = { ...prev, [key]: value };
       if (selectedId !== null) {
@@ -202,13 +217,15 @@ export default function VirtualTryOnPage() {
     let next = { ...base };
     switch (presetType) {
       case "nose-lift":
+        // Lifts the frame up the nose bridge and pulls it snug/closer to the face.
         next.y += 0.015;
-        next.z += 0.005;
+        next.z -= 0.005;  // negative Z = closer to the face (inward)
         next.rx -= 2.0;
         break;
       case "nose-lower":
+        // Drops the frame down the nose and lets it sit outward/away from the face.
         next.y -= 0.015;
-        next.z -= 0.005;
+        next.z += 0.005;  // positive Z = further from the face (outward)
         next.rx += 2.0;
         break;
       case "wide":
@@ -222,6 +239,7 @@ export default function VirtualTryOnPage() {
         break;
     }
     setAdjustments(next);
+    setActivePreset(presetType);
     if (selectedId !== null) {
       localStorage.setItem(`specsvision_adj_v12_${selectedId}`, JSON.stringify(next));
     }
@@ -233,6 +251,7 @@ export default function VirtualTryOnPage() {
     const cat = selected?.category?.toLowerCase().trim() || "default";
     const next = DEFAULT_ADJUSTMENTS[cat] || DEFAULT_ADJUSTMENTS.default;
     setAdjustments(next);
+    setActivePreset(null);
     if (selectedId !== null) {
       localStorage.removeItem(`specsvision_adj_v12_${selectedId}`);
     }
@@ -419,18 +438,21 @@ export default function VirtualTryOnPage() {
             </div>
 
             {/* Scrim behind the mobile bottom sheet — without it taps landed on the frame
-                carousel underneath, and there was no way to dismiss but the small ✕. */}
+                carousel underneath, and there was no way to dismiss but the small ✕.
+                Background is transparent so the live webcam feed stays visible and usable
+                while the drawer is open — a dark scrim would hide the very face you're
+                adjusting the glasses on. */}
             {showAdjust && (
               <div
                 role="presentation"
                 onClick={() => setShowAdjust(false)}
-                className="fixed inset-0 z-20 bg-black/50 backdrop-blur-[2px] animate-in fade-in duration-200 md:hidden"
+                className="fixed inset-0 z-20 animate-in fade-in duration-200 md:hidden"
               />
             )}
 
             {/* Glassmorphic Settings Drawer (Adjustments) */}
             {showAdjust && (
-              <div className="glass-chrome fixed md:absolute bottom-0 left-0 right-0 md:left-4 md:top-4 md:bottom-4 z-30 md:z-20 w-full md:w-[340px] h-[58dvh] md:h-auto rounded-t-[32px] md:rounded-3xl px-5 pt-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] md:pb-5 shadow-[0_-10px_40px_rgba(0,0,0,0.85)] md:shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom md:slide-in-from-left-5 duration-300 md:duration-200">
+              <div className="glass-chrome fixed md:absolute bottom-0 left-0 right-0 md:left-4 md:top-4 md:bottom-4 z-30 md:z-20 w-full md:w-[340px] h-[50dvh] md:h-auto rounded-t-[32px] md:rounded-3xl px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:pb-5 shadow-[0_-10px_40px_rgba(0,0,0,0.85)] md:shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom md:slide-in-from-left-5 duration-300 md:duration-200">
                 {/* Grab bar for mobile bottom sheet */}
                 <div className="w-12 h-1 bg-slate-850 rounded-full mx-auto mb-3.5 md:hidden shrink-0" />
 
@@ -449,13 +471,13 @@ export default function VirtualTryOnPage() {
                 </div>
 
                 {/* Adjustment Tabs */}
-                <div className="grid grid-cols-3 gap-1 my-4 bg-slate-900/60 p-1 rounded-2xl shrink-0 border border-slate-800/50">
+                <div className="grid grid-cols-3 gap-1 my-3 bg-slate-900/60 p-1 rounded-2xl shrink-0 border border-slate-800/50">
                   {(["position", "rotation", "scale"] as const).map((tab) => (
                     <button
                       key={tab}
                       type="button"
                       onClick={() => setAdjustTab(tab)}
-                      className={`py-2 text-[9px] font-bold uppercase tracking-wider rounded-xl transition-all ${
+                      className={`py-1.5 text-[9px] font-bold uppercase tracking-wider rounded-xl transition-all ${
                         adjustTab === tab
                           ? "bg-gradient-to-r from-purple-600 to-pink-500 text-white shadow-lg"
                           : "text-slate-400 hover:text-slate-200"
@@ -467,7 +489,7 @@ export default function VirtualTryOnPage() {
                 </div>
 
                 {/* Tab Content (Scrollable) */}
-                <div className="flex-1 overflow-y-auto space-y-5 pr-1 py-1 custom-scrollbar min-h-0 text-xs">
+                <div className="flex-1 overflow-y-auto space-y-4 pr-1 py-1 custom-scrollbar min-h-0 text-xs">
                   {adjustTab === "position" && (
                     <>
                       {/* Position Y: Height (Up / Down) */}
@@ -776,62 +798,54 @@ export default function VirtualTryOnPage() {
                           </button>
                         </div>
                       </div>
-
-                      {/* Calibration Presets */}
-                      <div>
-                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2.5">Calibration Presets</h4>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => applyPreset("nose-lift")}
-                            className="rounded-2xl border border-slate-800 bg-slate-900/50 p-2.5 text-left hover:border-purple-500/40 hover:bg-slate-900 transition-all active:scale-95"
-                          >
-                            <span className="block font-bold text-white text-[10px]">Nose Lift</span>
-                            <span className="block text-[8px] text-slate-550 mt-0.5">Sits higher & closer</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => applyPreset("nose-lower")}
-                            className="rounded-2xl border border-slate-800 bg-slate-900/50 p-2.5 text-left hover:border-purple-500/40 hover:bg-slate-900 transition-all active:scale-95"
-                          >
-                            <span className="block font-bold text-white text-[10px]">Nose Drop</span>
-                            <span className="block text-[8px] text-slate-550 mt-0.5">Sits lower & outward</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => applyPreset("wide")}
-                            className="rounded-2xl border border-slate-800 bg-slate-900/50 p-2.5 text-left hover:border-purple-500/40 hover:bg-slate-900 transition-all active:scale-95"
-                          >
-                            <span className="block font-bold text-white text-[10px]">Wide Face</span>
-                            <span className="block text-[8px] text-slate-550 mt-0.5">Scales size up 5%</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => applyPreset("narrow")}
-                            className="rounded-2xl border border-slate-800 bg-slate-900/50 p-2.5 text-left hover:border-purple-500/40 hover:bg-slate-900 transition-all active:scale-95"
-                          >
-                            <span className="block font-bold text-white text-[10px]">Narrow Face</span>
-                            <span className="block text-[8px] text-slate-550 mt-0.5">Scales size down 5%</span>
-                          </button>
-                        </div>
-                      </div>
                     </>
                   )}
                 </div>
 
+                {/* Calibration Presets — always visible regardless of active tab */}
+                <div className="shrink-0 pt-3 border-t border-slate-800/60 mt-1">
+                  <h4 className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-2 tryon-section-title">Quick Presets</h4>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {([
+                      { id: "nose-lift",  label: "Nose\nLift",    icon: "arrow_upward" },
+                      { id: "nose-lower", label: "Nose\nDrop",    icon: "arrow_downward" },
+                      { id: "wide",       label: "Wide\nFace",    icon: "open_in_full" },
+                      { id: "narrow",     label: "Narrow\nFace",  icon: "close_fullscreen" },
+                    ] as const).map(({ id, label, icon }) => {
+                      const isActive = activePreset === id;
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => applyPreset(id)}
+                          className={`quick-preset-btn relative flex flex-col items-center gap-1 rounded-2xl border p-2 transition-all active:scale-95 ${
+                            isActive ? "active" : ""
+                          }`}
+                        >
+                          {isActive && (
+                            <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-purple-500 shadow-[0_0_4px_rgba(168,85,247,0.8)]" />
+                          )}
+                          <span className="material-symbols-outlined text-base leading-none preset-icon">{icon}</span>
+                          <span className="text-center text-[8px] font-bold leading-tight whitespace-pre-line preset-label">{label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {/* Drawer Footer Actions */}
-                <div className="pt-3 border-t border-slate-800/80 mt-3 flex gap-2 shrink-0">
+                <div className="pt-2.5 border-t border-slate-800/80 mt-2 flex gap-2 shrink-0">
                   <button
                     type="button"
                     onClick={resetAllAdjustments}
-                    className="flex-1 rounded-xl border border-slate-850 py-2.5 text-[10px] font-bold text-slate-300 hover:bg-slate-900 hover:text-white transition-all active:scale-95"
+                    className="tryon-reset-all-btn flex-1 rounded-xl border py-2 text-[10px] font-bold transition-all active:scale-95"
                   >
                     Reset All
                   </button>
                   <button
                     type="button"
                     onClick={() => applyPreset("standard")}
-                    className="flex-1 rounded-xl bg-slate-800 py-2.5 text-[10px] font-bold text-white hover:bg-slate-700 transition-all active:scale-95"
+                    className="tryon-reset-preset-btn flex-1 rounded-xl py-2 text-[10px] font-bold transition-all active:scale-95"
                   >
                     Reset Preset
                   </button>

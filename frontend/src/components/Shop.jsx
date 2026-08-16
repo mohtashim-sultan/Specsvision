@@ -4,6 +4,7 @@ import { Search, SlidersHorizontal } from 'lucide-react';
 import ProductCard from './ProductCard';
 import SearchBar from './shop/Searchbar';
 import FilterDropdown from './shop/FilterDropdown';
+import CompareFloatingBar from './shop/CompareFloatingBar';
 import LoadingSpinner from './common/LoadingSpinner';
 import EmptyState from './common/EmptyState';
 import { fetchProducts } from '../api/productsApi';
@@ -190,10 +191,10 @@ export default function Shop() {
         {/* Filters Panel */}
         {filtersOpen && (
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="rounded-2xl p-4 sm:p-5 mb-6 shadow-sm overflow-hidden"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="relative z-30 rounded-2xl p-4 sm:p-5 mb-6 shadow-md"
             style={{
               backgroundColor: 'var(--surface-bg)',
               border: '1px solid var(--border-color)',
@@ -236,6 +237,8 @@ export default function Shop() {
           />
         )}
       </div>
+
+      <CompareFloatingBar />
     </main>
   );
 }

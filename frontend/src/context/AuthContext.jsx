@@ -109,13 +109,8 @@ export const AuthProvider = ({ children }) => {
 
   const register = useCallback(async (userData) => {
     const { email, password, name } = userData;
-    await signupRequest(email, password, name || null);
-    await loginRequest(email, password);
-    const me = await fetchCurrentUser();
-    setUser(me);
-    setAdmin(null);
-    await refreshCart();
-  }, [refreshCart]);
+    return await signupRequest(email, password, name || null);
+  }, []);
 
   const logout = useCallback(() => {
     logoutClient();

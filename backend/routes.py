@@ -1,15 +1,17 @@
 import json
 import os
+import random
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, UploadFile, File
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status, UploadFile, File
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, joinedload
 
 from config import settings
 from deps import get_current_admin, get_current_user, get_current_user_optional, get_db
+from email_service import send_otp_email, send_order_confirmation_email
 from models import Admin, CartItem, Order, OrderItem, Product, Review, User, WishlistItem
 from order_status import VALID_ORDER_STATUSES, can_transition
 from rate_limit import enforce_login_rate_limit
@@ -32,25 +34,31 @@ from schemas import (
     CartOut,
     CheckoutRequest,
     CheckoutResponse,
+    CreatePaymentIntentRequest,
+    CreatePaymentIntentResponse,
     OrderItemOut,
     OrderOut,
     ProductOut,
+    ResendOtpRequest,
     ReviewCreate,
     ReviewListOut,
     ReviewOut,
     ReviewSummary,
     SalesPoint,
+    SignupResponse,
     TokenWithRole,
     TopProduct,
     UserCreate,
     UserLogin,
     UserOut,
     UserUpdate,
+    VerifyEmailRequest,
     WishlistItemCreate,
     WishlistItemOut,
     WishlistOut,
 )
 from security import create_access_token, hash_password, verify_password
+import stripe_service
 from sentiment import classify as classify_sentiment
 
 # Static coupon table: code -> (kind, value). "percent" is a fraction of subtotal, "flat" a $ amount.
@@ -271,6 +279,7 @@ products_router = APIRouter(prefix="/products", tags=["products"])
 cart_router = APIRouter(prefix="/cart", tags=["cart"])
 checkout_router = APIRouter(prefix="/checkout", tags=["checkout"])
 wishlist_router = APIRouter(prefix="/wishlist", tags=["wishlist"])
+stripe_router = APIRouter(prefix="/stripe", tags=["stripe"])
 admin_auth_router = APIRouter()
 admin_products_router = APIRouter()
 admin_orders_router = APIRouter()
@@ -279,26 +288,84 @@ admin_users_router = APIRouter()
 admin_analytics_router = APIRouter()
 
 
-@auth_router.post("/signup", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-def signup(body: UserCreate, db: Session = Depends(get_db)) -> User:
+@auth_router.post("/signup", response_model=SignupResponse, status_code=status.HTTP_201_CREATED)
+def signup(body: UserCreate, db: Session = Depends(get_db)) -> SignupResponse:
     email = body.email.lower()
     if db.scalar(select(Admin).where(Admin.email == email)):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="This email is used by an administrator account.",
         )
-    exists = db.scalar(select(User).where(User.email == email))
-    if exists:
+    existing = db.scalar(select(User).where(User.email == email))
+    if existing and existing.is_verified:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+
+    # Generate a fresh 6-digit OTP.
+    otp = f"{random.randint(0, 999999):06d}"
+    otp_hash = hash_password(otp)
+    expires = datetime.now(timezone.utc) + timedelta(minutes=settings.otp_expire_minutes)
+
+    if existing:
+        # Resend to an unverified account — refresh OTP without creating a duplicate.
+        existing.otp_code = otp_hash
+        existing.otp_expires_at = expires
+        existing.full_name = body.full_name
+        db.commit()
+        db.refresh(existing)
+        send_otp_email(email, body.full_name or email.split("@")[0], otp)
+        return SignupResponse(message="Verification code sent. Check your email.", email=email)
+
     user = User(
         email=email,
         hashed_password=hash_password(body.password),
         full_name=body.full_name,
+        is_verified=False,
+        otp_code=otp_hash,
+        otp_expires_at=expires,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
-    return user
+    send_otp_email(email, body.full_name or email.split("@")[0], otp)
+    return SignupResponse(message="Verification code sent. Check your email.", email=email)
+
+
+@auth_router.post("/verify-email", response_model=TokenWithRole)
+def verify_email(body: VerifyEmailRequest, db: Session = Depends(get_db)) -> TokenWithRole:
+    email = body.email.lower()
+    user = db.scalar(select(User).where(User.email == email))
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found.")
+    if user.is_verified:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already verified.")
+    if user.otp_code is None or user.otp_expires_at is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No pending verification. Request a new code.")
+    expires_at = user.otp_expires_at if user.otp_expires_at.tzinfo else user.otp_expires_at.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Verification code expired. Request a new one.")
+    if not verify_password(body.otp, user.otp_code):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code.")
+
+    user.is_verified = True
+    user.otp_code = None
+    user.otp_expires_at = None
+    db.commit()
+    token = create_access_token(user.id, role="user", token_version=user.token_version)
+    return TokenWithRole(access_token=token, role="user")
+
+
+@auth_router.post("/resend-otp", status_code=status.HTTP_204_NO_CONTENT)
+def resend_otp(body: ResendOtpRequest, db: Session = Depends(get_db)) -> None:
+    email = body.email.lower()
+    user = db.scalar(select(User).where(User.email == email))
+    if user is None or user.is_verified:
+        # Silently succeed to avoid user enumeration.
+        return
+    otp = f"{random.randint(0, 999999):06d}"
+    user.otp_code = hash_password(otp)
+    user.otp_expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.otp_expire_minutes)
+    db.commit()
+    send_otp_email(email, user.full_name or email.split("@")[0], otp)
 
 
 @auth_router.post("/login", response_model=TokenWithRole)
@@ -320,6 +387,11 @@ def login(body: UserLogin, request: Request, db: Session = Depends(get_db)) -> T
         token = create_access_token(admin.id, role="admin", token_version=admin.token_version)
         return TokenWithRole(access_token=token, role="admin")
     assert user is not None
+    if not user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please verify your email before logging in.",
+        )
     if not verify_password(body.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password.")
     token = create_access_token(user.id, role="user", token_version=user.token_version)
@@ -630,12 +702,59 @@ def _validate_card_not_expired(card_expiry: str) -> None:
         raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Card has expired.")
 
 
+@checkout_router.post("/create-payment-intent", response_model=CreatePaymentIntentResponse)
+def create_payment_intent(
+    body: CreatePaymentIntentRequest,
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CreatePaymentIntentResponse:
+    """Compute order total and create a Stripe PaymentIntent. Returns the client_secret."""
+    lines = list(
+        db.scalars(
+            select(CartItem).where(CartItem.user_id == current.id).options(joinedload(CartItem.product))
+        )
+        .unique()
+        .all()
+    )
+    if not lines:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cart is empty")
+
+    subtotal = sum(
+        (line.product.price * line.quantity)
+        for line in lines
+        if line.product is not None
+    )
+    pricing = _compute_pricing(Decimal(str(subtotal)), body.coupon_code)
+    total_cents = int((pricing["total"] * 100).to_integral_value(rounding=ROUND_HALF_UP))
+
+    client_secret = stripe_service.create_payment_intent(
+        amount_cents=total_cents,
+        metadata={"user_id": str(current.id)},
+    )
+    return CreatePaymentIntentResponse(client_secret=client_secret, amount=total_cents)
+
+
 @checkout_router.post("", response_model=CheckoutResponse)
 def checkout(
     body: CheckoutRequest,
     current: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> CheckoutResponse:
+    # --- Verify Stripe PaymentIntent -----------------------------------------------
+    try:
+        pi = stripe_service.retrieve_payment_intent(body.payment_intent_id)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Unable to verify payment. Please try again.",
+        )
+    if pi.status != "succeeded":
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=f"Payment not completed (status: {pi.status}). Please complete payment first.",
+        )
+    # -------------------------------------------------------------------------------
+
     lines = list(
         db.scalars(
             select(CartItem).where(CartItem.user_id == current.id).options(joinedload(CartItem.product))
@@ -681,17 +800,6 @@ def checkout(
 
     pricing = _compute_pricing(subtotal, body.coupon_code)
 
-    # --- Simulated payment gateway ---------------------------------------------------
-    _validate_card_not_expired(body.payment.card_expiry)
-    if not body.payment.simulate_success:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail="Your transaction was declined by the bank.",
-        )
-    last4 = body.payment.card_number[-4:]
-    payment_reference = f"sim-{uuid.uuid4().hex[:12]}-{last4}"
-    # ---------------------------------------------------------------------------------
-
     ship = body.shipping
     order = Order(
         user_id=current.id,
@@ -702,7 +810,7 @@ def checkout(
         discount=pricing["discount"],
         coupon_code=pricing["coupon_code"],
         total=pricing["total"],
-        payment_reference=payment_reference,
+        payment_reference=body.payment_intent_id,
         contact_email=ship.email,
         contact_phone=ship.phone,
         ship_full_name=ship.full_name,
@@ -726,6 +834,35 @@ def checkout(
     db.commit()
     db.refresh(order)
 
+    # Send order confirmation email (non-blocking — never fails the request)
+    send_order_confirmation_email(
+        to=ship.email,
+        name=ship.full_name or current.full_name or ship.email,
+        order_id=order.id,
+        status=order.status,
+        items=[
+            {
+                "product_name": oi.product_name,
+                "quantity": oi.quantity,
+                "unit_price": oi.unit_price,
+                "color": oi.color,
+            }
+            for oi in order_items
+        ],
+        subtotal=order.subtotal,
+        discount=order.discount,
+        tax=order.tax,
+        shipping_fee=order.shipping_fee,
+        total=order.total,
+        ship_full_name=order.ship_full_name,
+        ship_address=order.ship_address,
+        ship_city=order.ship_city,
+        ship_state=order.ship_state,
+        ship_zip=order.ship_zip,
+        payment_reference=order.payment_reference,
+        created_at=order.created_at,
+    )
+
     return CheckoutResponse(
         order_id=order.id,
         status=order.status,
@@ -735,7 +872,7 @@ def checkout(
         discount=order.discount,
         total=order.total,
         payment_reference=order.payment_reference,
-        message="Payment approved (simulated gateway). Order placed successfully.",
+        message="Payment confirmed. Order placed successfully.",
     )
 
 
@@ -1338,9 +1475,39 @@ def upload_file(
             os.remove(filepath)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to store upload.")
     return {"url": f"/uploads/{filename}"}
+
+
+@stripe_router.post("/webhook", status_code=status.HTTP_200_OK)
+async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
+    sig_header = request.headers.get("stripe-signature")
+    if not sig_header:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing signature header")
+    payload = await request.body()
+    try:
+        event = stripe_service.construct_webhook_event(payload, sig_header)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Webhook signature error: {e}")
+
+    if event.type == "payment_intent.succeeded":
+        intent = event.data.object
+        order = db.scalar(select(Order).where(Order.payment_reference == intent.id))
+        if order:
+            order.status = "processing"
+            db.commit()
+    elif event.type == "payment_intent.payment_failed":
+        intent = event.data.object
+        order = db.scalar(select(Order).where(Order.payment_reference == intent.id))
+        if order:
+            order.status = "cancelled"
+            db.commit()
+
+    return {"status": "success"}
+
+
 admin_router.include_router(admin_auth_router, prefix="/auth", tags=["admin-auth"])
 admin_router.include_router(admin_products_router, prefix="/products", tags=["admin-products"])
 admin_router.include_router(admin_orders_router, prefix="/orders", tags=["admin-orders"])
 admin_router.include_router(admin_stats_router, prefix="/stats", tags=["admin-stats"])
 admin_router.include_router(admin_users_router, prefix="/users", tags=["admin-users"])
 admin_router.include_router(admin_analytics_router, prefix="/analytics", tags=["admin-analytics"])
+

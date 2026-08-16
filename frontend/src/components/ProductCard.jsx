@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Star, Eye, ShoppingCart, Heart, GitCompare } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -6,6 +6,8 @@ import { useAuth } from '../context/AuthContext';
 import { useWishlist } from '../context/WishlistContext';
 import { useCompare } from '../context/CompareContext';
 import { addCartItem } from '../api/cartApi';
+import { API_BASE } from '../config/env';
+import ModelViewer from './ModelViewer';
 import toast from 'react-hot-toast';
 
 export default function ProductCard({ product }) {
@@ -13,6 +15,12 @@ export default function ProductCard({ product }) {
   const { isWishlisted, toggle: toggleWishlist } = useWishlist();
   const { has: inCompare, toggle: toggleCompare } = useCompare();
   const wishlisted = isWishlisted(product.id);
+
+  const modelSrc = useMemo(() => {
+    const fv = product?.front_view?.trim();
+    if (!fv || !/\.(glb|gltf)$/i.test(fv)) return null;
+    return fv.startsWith('/') ? `${API_BASE}${fv}` : fv;
+  }, [product]);
 
   const handleWishlist = (e) => {
     e.preventDefault();
@@ -52,14 +60,35 @@ export default function ProductCard({ product }) {
       }}
     >
       <div className="relative overflow-hidden">
-        <Link to={`/shop/${product.id}`} className="block aspect-[4/3] overflow-hidden">
-          <img
-            src={product.image}
-            alt={product.name}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-            loading="lazy"
-          />
-        </Link>
+        <div className="aspect-[4/3] w-full overflow-hidden bg-surface-container-low/40 relative">
+          {modelSrc ? (
+            <div className="w-full h-full relative">
+              <ModelViewer
+                src={modelSrc}
+                alt={product.name}
+                minHeight="100%"
+                showArButton={false}
+                showHint={false}
+                loading="lazy"
+                className="w-full h-full"
+              />
+              <Link
+                to={`/shop/${product.id}`}
+                className="absolute top-0 left-0 right-0 h-10 z-[5]"
+                aria-label={`View details for ${product.name}`}
+              />
+            </div>
+          ) : (
+            <Link to={`/shop/${product.id}`} className="block w-full h-full overflow-hidden">
+              <img
+                src={product.image || "/specs.jpg"}
+                alt={product.name}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                loading="lazy"
+              />
+            </Link>
+          )}
+        </div>
         <div className="absolute top-2 sm:top-3 left-2 sm:left-3 z-10">
           <span
             className={`px-2 py-1 text-[10px] xs:text-xs font-semibold rounded-full whitespace-nowrap ${
@@ -75,12 +104,12 @@ export default function ProductCard({ product }) {
             {product.badge}
           </span>
         </div>
-        <div className="absolute top-2 sm:top-3 right-2 sm:right-3 z-10 flex flex-col gap-2">
+        <div className="absolute top-2 sm:top-3 right-2 sm:right-3 z-30 flex flex-col gap-2 pointer-events-auto">
           <button
             type="button"
             onClick={handleWishlist}
-            className="p-2 rounded-full shadow-lg transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center backdrop-blur-sm"
-            style={{ backgroundColor: 'rgba(255,255,255,0.9)' }}
+            className="p-2 sm:p-2 rounded-full shadow-lg transition-colors min-w-[38px] min-h-[38px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center backdrop-blur-md touch-manipulation cursor-pointer active:scale-90"
+            style={{ backgroundColor: 'rgba(255,255,255,0.92)', border: '1px solid rgba(0,0,0,0.08)' }}
             aria-label={wishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
             title={wishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
           >
@@ -89,8 +118,14 @@ export default function ProductCard({ product }) {
           <button
             type="button"
             onClick={handleCompare}
-            className="p-2 rounded-full shadow-lg transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center backdrop-blur-sm opacity-0 group-hover:opacity-100"
-            style={{ backgroundColor: inCompare ? 'rgba(147,51,234,0.95)' : 'rgba(255,255,255,0.9)' }}
+            className={`p-2 sm:p-2 rounded-full shadow-lg transition-all min-w-[38px] min-h-[38px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center backdrop-blur-md touch-manipulation cursor-pointer active:scale-90 ${
+              inCompare ? 'opacity-100 scale-105' : 'opacity-100 sm:opacity-0 sm:group-hover:opacity-100'
+            }`}
+            style={{
+              backgroundColor: inCompare ? 'rgba(147,51,234,0.95)' : 'rgba(255,255,255,0.92)',
+              border: inCompare ? '1px solid rgba(147,51,234,1)' : '1px solid rgba(0,0,0,0.08)',
+              boxShadow: inCompare ? '0 0 12px rgba(147,51,234,0.5)' : '0 4px 12px rgba(0,0,0,0.15)',
+            }}
             aria-label="Toggle compare"
             title={inCompare ? 'Remove from compare' : 'Add to compare'}
           >
@@ -98,8 +133,8 @@ export default function ProductCard({ product }) {
           </button>
           <Link
             to={`/try-on/${product.id}`}
-            className="p-2 rounded-full shadow-lg transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center backdrop-blur-sm opacity-0 group-hover:opacity-100"
-            style={{ backgroundColor: 'rgba(255,255,255,0.9)' }}
+            className="p-2 sm:p-2 rounded-full shadow-lg transition-colors min-w-[38px] min-h-[38px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center backdrop-blur-md opacity-0 group-hover:opacity-100 touch-manipulation cursor-pointer"
+            style={{ backgroundColor: 'rgba(255,255,255,0.92)', border: '1px solid rgba(0,0,0,0.08)' }}
             aria-label="Quick view"
           >
             <Eye className="w-4 h-4 text-purple-600" />

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -20,6 +20,10 @@ class User(Base):
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # Bumped on logout / password change to revoke every outstanding JWT for this account.
     token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # Email verification via OTP.
+    is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    otp_code: Mapped[str | None] = mapped_column(String(255), nullable=True)  # bcrypt hash of OTP
+    otp_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     cart_items: Mapped[list[CartItem]] = relationship(back_populates="user", cascade="all, delete-orphan")

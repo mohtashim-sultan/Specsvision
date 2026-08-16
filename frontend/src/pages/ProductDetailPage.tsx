@@ -11,6 +11,7 @@ import { toStorefrontProduct } from "../utils/storefrontProduct";
 import { ShoppingBag, ChevronRight, Star } from "lucide-react";
 import { API_BASE } from "../config/env";
 import { motion } from "framer-motion";
+import ModelViewer from "../components/ModelViewer";
 
 function formatPrice(p: string) {
   const n = Number(p);
@@ -30,6 +31,7 @@ export default function ProductDetailPage() {
   const [activeImage, setActiveImage] = useState<string>("");
   const [selectedColor, setSelectedColor] = useState<string>("");
   const [ratingSummary, setRatingSummary] = useState<ReviewSummary | null>(null);
+  const [viewMode, setViewMode] = useState<'images' | '3d'>('3d');
 
   // Colors come from product data; only render the swatch UI when the product defines them.
   const colors = product?.colors ?? [];
@@ -100,6 +102,16 @@ export default function ProductDetailPage() {
     if (list.length === 0) list.push("/specs.jpg");
     return list;
   }, [product]);
+
+  // 3D model: front_view stores the GLB file path used by the AR try-on system.
+  // We reuse it here for the rotating product viewer.
+  const modelSrc = useMemo(() => {
+    const fv = product?.front_view?.trim();
+    if (!fv || !/\.(glb|gltf)$/i.test(fv)) return null;
+    return fv.startsWith('/') ? `${API_BASE}${fv}` : fv;
+  }, [product]);
+
+  const has3D = Boolean(modelSrc);
 
   useEffect(() => {
     if (images.length > 0) setActiveImage(images[0]);
@@ -177,37 +189,99 @@ export default function ProductDetailPage() {
       </nav>
 
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-12 lg:items-start">
-        {/* Image Gallery */}
+        {/* ── Image Gallery / 3D Viewer ── */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="lg:col-span-7"
         >
-          <div
-            className="overflow-hidden rounded-2xl shadow-lg"
-            style={{ backgroundColor: 'var(--surface-bg)', border: '1px solid var(--border-color)' }}
-          >
-            <img src={activeImage} alt={product.name} className="aspect-[4/3] w-full object-cover" />
-          </div>
-          {images.length > 1 && (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {images.map((imgUrl, i) => (
-                <button
-                  key={imgUrl + i}
-                  type="button"
-                  onClick={() => setActiveImage(imgUrl)}
-                  className="relative aspect-square w-16 overflow-hidden rounded-xl transition-all"
-                  style={{
-                    border: activeImage === imgUrl ? '2px solid var(--text-accent)' : '2px solid var(--border-color)',
-                    transform: activeImage === imgUrl ? 'scale(1.05)' : 'scale(1)',
-                    boxShadow: activeImage === imgUrl ? '0 4px 12px rgba(147,51,234,0.2)' : 'none',
-                  }}
-                >
-                  <img src={imgUrl} alt={`View ${i + 1}`} className="h-full w-full object-cover" />
-                </button>
-              ))}
+          {/* View-mode toggle — only shown when a 3D model exists */}
+          {has3D && (
+            <div className="mb-3 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setViewMode('images')}
+                className="flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold transition-all"
+                style={viewMode === 'images' ? {
+                  background: 'linear-gradient(135deg,#9333ea,#ec4899)',
+                  color: '#ffffff',
+                  boxShadow: '0 2px 12px rgba(147,51,234,0.35)',
+                } : {
+                  backgroundColor: 'rgba(147,51,234,0.07)',
+                  color: 'var(--text-accent)',
+                  border: '1px solid rgba(147,51,234,0.2)',
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 14 }}>photo_library</span>
+                Images
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('3d')}
+                className="flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold transition-all"
+                style={viewMode === '3d' ? {
+                  background: 'linear-gradient(135deg,#9333ea,#ec4899)',
+                  color: '#ffffff',
+                  boxShadow: '0 2px 12px rgba(147,51,234,0.35)',
+                } : {
+                  backgroundColor: 'rgba(147,51,234,0.07)',
+                  color: 'var(--text-accent)',
+                  border: '1px solid rgba(147,51,234,0.2)',
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 14 }}>view_in_ar</span>
+                3D View
+              </button>
             </div>
           )}
+
+          {/* 3D Model Viewer */}
+          {has3D && viewMode === '3d' && (
+            <div
+              className="overflow-hidden rounded-2xl shadow-lg"
+              style={{
+                backgroundColor: 'var(--surface-bg)',
+                border: '1px solid var(--border-color)',
+                background: 'radial-gradient(ellipse at 50% 30%, rgba(147,51,234,0.06) 0%, var(--surface-bg) 70%)',
+              }}
+            >
+              <ModelViewer
+                src={modelSrc!}
+                alt={`${product.name} 3D model`}
+                poster={images[0]}
+                className="aspect-[4/3]"
+              />
+            </div>
+          )}
+
+          {/* Image Gallery (always rendered; hidden when 3D mode active) */}
+          <div className={has3D && viewMode === '3d' ? 'hidden' : ''}>
+            <div
+              className="overflow-hidden rounded-2xl shadow-lg"
+              style={{ backgroundColor: 'var(--surface-bg)', border: '1px solid var(--border-color)' }}
+            >
+              <img src={activeImage} alt={product.name} className="aspect-[4/3] w-full object-cover" />
+            </div>
+            {images.length > 1 && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {images.map((imgUrl, i) => (
+                  <button
+                    key={imgUrl + i}
+                    type="button"
+                    onClick={() => setActiveImage(imgUrl)}
+                    className="relative aspect-square w-16 overflow-hidden rounded-xl transition-all"
+                    style={{
+                      border: activeImage === imgUrl ? '2px solid var(--text-accent)' : '2px solid var(--border-color)',
+                      transform: activeImage === imgUrl ? 'scale(1.05)' : 'scale(1)',
+                      boxShadow: activeImage === imgUrl ? '0 4px 12px rgba(147,51,234,0.2)' : 'none',
+                    }}
+                  >
+                    <img src={imgUrl} alt={`View ${i + 1}`} className="h-full w-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </motion.div>
 
         {/* Product Info */}

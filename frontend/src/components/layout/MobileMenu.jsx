@@ -1,17 +1,20 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { X, Home, ShoppingBag, Eye, Info, Mail, User, LogOut, ShoppingCart } from 'lucide-react';
+import { X, Home, ShoppingBag, Eye, Info, Mail, User, LogOut, ShoppingCart, GitCompare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
+import { useCompare } from '../../context/CompareContext';
 
 export default function MobileMenu({ isOpen, onClose }) {
   const { isAuthenticated, user, logout } = useAuth();
+  const { count: compareCount } = useCompare();
   const location = useLocation();
 
   const menuItems = [
     { path: '/', label: 'Home', icon: Home },
     { path: '/shop', label: 'Shop', icon: ShoppingBag },
     { path: '/try-on', label: 'Virtual Try-On', icon: Eye },
+    { path: '/compare', label: 'Compare Frames', icon: GitCompare, badge: compareCount },
     { path: '/about', label: 'About', icon: Info },
     { path: '/contact', label: 'Contact', icon: Mail },
   ];
@@ -96,7 +99,12 @@ export default function MobileMenu({ isOpen, onClose }) {
                     >
                       <Icon className="w-5 h-5 flex-shrink-0" style={{ color: 'var(--text-accent)' }} />
                       <span className="font-medium">{item.label}</span>
-                      {isActive && (
+                      {Boolean(item.badge) && item.badge > 0 && (
+                        <span className="ml-auto bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow-sm">
+                          {item.badge}
+                        </span>
+                      )}
+                      {isActive && !item.badge && (
                         <span className="ml-auto w-1.5 h-1.5 rounded-full bg-gradient-to-r from-purple-600 to-pink-600" />
                       )}
                     </Link>
