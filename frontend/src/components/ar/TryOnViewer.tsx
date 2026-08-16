@@ -100,6 +100,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
     const rawDepthRef = useRef(0);
     /** Native width (X size) of the loaded frame — used to scale frame width to the eyes. */
     const rawWidthRef = useRef(1);
+    /** Measured Y/X aspect ratio of the 3D model geometry. */
+    const rawAspectRef = useRef(0.38);
     /** Read-only landmark anchors (eyes/forehead/chin) that drive the head-pose basis. */
     const poseAnchorsRef = useRef<Record<string, any> | null>(null);
     /** Smoothed temple-length Z multiplier held across frames. */
@@ -302,6 +304,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             // depth (arm length) to reach the ears.
             rawWidthRef.current = rawSize.x || 1;
             rawDepthRef.current = rawSize.z;
+            const measuredAspect = (rawSize.y > 0 && rawSize.x > 0) ? (rawSize.y / rawSize.x) : 0.38;
+            rawAspectRef.current = measuredAspect;
 
             // Apply initial transforms from current adjustments
             const adj = adjustmentsRef.current;
@@ -328,6 +332,7 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             // Parent to the scene (not the nose anchor): the animation loop drives its
             // world position/orientation/scale from the landmark head-pose basis.
             glassesGroup.matrixAutoUpdate = true;
+            glassesGroup.visible = false; // Start hidden until a face is detected
             scene.add(glassesGroup);
             glassesRef.current = glassesGroup;
           },
@@ -347,44 +352,70 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
       applyFitRef.current?.();
     }, [faceStretch, cameraZoom]);
 
-    // ── Snapshot ────────────────────────────────────────────────────────────────
+    const takeSnapshotNow = () => {
+      const mindar = mindarRef.current;
+      if (!mindar || !mindar.video || mindar.video.readyState < 2) return null;
+      const container = containerRef.current;
+      if (!container) return null;
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      if (w <= 0 || h <= 0) return null;
+
+      const snap = document.createElement("canvas");
+      snap.width = Math.floor(w);
+      snap.height = Math.floor(h);
+      const ctx = snap.getContext("2d");
+      if (!ctx) return null;
+
+      // Composite exactly what's on screen: both layers occupy the same fit rect
+      const { left, top, width, height } = fitRectRef.current;
+      if (width <= 0 || height <= 0) return null;
+
+      ctx.fillStyle = "#020617";
+      ctx.fillRect(0, 0, snap.width, snap.height);
+
+      // 1. Draw camera video feed with matching filters and mirroring
+      ctx.save();
+      ctx.translate(left + width / 2, 0);
+      ctx.scale(-1, 1);
+      ctx.translate(-(left + width / 2), 0);
+      try {
+        ctx.filter = CAMERA_FILTER; // match the on-screen enhanced feed
+      } catch {
+        // ignore filter if unsupported by browser context
+      }
+      ctx.drawImage(mindar.video, left, top, width, height);
+      ctx.restore(); // resets filter to none so 3D frames draw unfiltered
+
+      // 2. Synchronously re-render Three.js scene so WebGL buffer is fresh & populated
+      if (mindar.renderer && mindar.scene && mindar.camera) {
+        try {
+          mindar.renderer.render(mindar.scene, mindar.camera);
+        } catch {
+          // fallback
+        }
+      }
+
+      // 3. Draw 3D glasses frame WebGL canvas
+      const canvas = mindar.renderer?.domElement;
+      if (canvas) {
+        try {
+          ctx.drawImage(canvas, left, top, width, height);
+        } catch {
+          // fallback
+        }
+      }
+
+      try {
+        return snap.toDataURL("image/png");
+      } catch (err) {
+        console.error("Failed to generate snapshot data URL:", err);
+        return null;
+      }
+    };
 
     useImperativeHandle(ref, () => ({
-      captureSnapshot: () => {
-        const mindar = mindarRef.current;
-        if (!mindar || !mindar.video || mindar.video.readyState < 2) return null;
-        const container = containerRef.current;
-        if (!container) return null;
-        const w = container.clientWidth;
-        const h = container.clientHeight;
-        const snap = document.createElement("canvas");
-        snap.width = w;
-        snap.height = h;
-        const ctx = snap.getContext("2d");
-        if (!ctx) return null;
-
-        // Composite exactly what's on screen: both layers occupy the same fit rect, so
-        // drawing them into that rect reproduces the live view (including any crop that
-        // falls outside the container — the canvas clips it for us).
-        const { left, top, width, height } = fitRectRef.current;
-        if (width <= 0 || height <= 0) return null;
-
-        ctx.fillStyle = "#020617";
-        ctx.fillRect(0, 0, w, h);
-
-        ctx.save();
-        // Mirror about the fit rect's own centre so the flip matches the on-screen video.
-        ctx.translate(left + width / 2, 0);
-        ctx.scale(-1, 1);
-        ctx.translate(-(left + width / 2), 0);
-        ctx.filter = CAMERA_FILTER; // match the on-screen enhanced feed
-        ctx.drawImage(mindar.video, left, top, width, height);
-        ctx.restore(); // resets filter to none so the 3D frame draws unfiltered
-
-        const canvas = mindar.renderer?.domElement;
-        if (canvas) ctx.drawImage(canvas, left, top, width, height);
-        return snap.toDataURL("image/png");
-      },
+      captureSnapshot: () => takeSnapshotNow(),
     }));
 
     // ── Init / teardown ────────────────────────────────────────────────────────
@@ -716,9 +747,12 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
           // `loadedmetadata` is what makes videoWidth/videoHeight readable at all — without
           // it, a fit attempted before metadata arrives bails out and never retries.
           const onVideoResize = () => { if (!cancelled) mindarInstance._resize(); };
-          for (const evt of ["resize", "loadedmetadata", "playing"]) {
-            mindarInstance.video?.addEventListener(evt, onVideoResize);
-            cleanupFns.push(() => mindarInstance.video?.removeEventListener(evt, onVideoResize));
+          const videoElement = mindarInstance.video;
+          if (videoElement) {
+            for (const evt of ["resize", "loadedmetadata", "playing"]) {
+              videoElement.addEventListener(evt, onVideoResize);
+              cleanupFns.push(() => videoElement.removeEventListener(evt, onVideoResize));
+            }
           }
 
           window.addEventListener("orientationchange", scheduleFit);
@@ -748,8 +782,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
           const _qUser = new THREE.Quaternion();
           const _euler = new THREE.Euler();
 
-          // Sample the shape landmarks every few frames, classify, and emit a shape only
-          // once it has held a clear majority across the rolling window.
+          // Sample the shape landmarks every few frames, classify, and continuously emit
+          // the current best shape so the UI stays live — not just on first detection.
           const sampleFaceShape = () => {
             const sa = shapeAnchorsRef.current;
             if (!onFaceShapeDetect || !sa) return;
@@ -764,8 +798,10 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             if (!shape) return;
             const buf = shapeSamplesRef.current;
             buf.push(shape);
-            if (buf.length > 45) buf.shift();
-            if (buf.length < 20) return;
+            // Smaller rolling window (20) → faster initial lock (~0.6 s at 30 fps × 3rd-frame sampling).
+            if (buf.length > 20) buf.shift();
+            // Start deciding once we have 10 samples (was 20) so the card appears quickly.
+            if (buf.length < 10) return;
             const counts = new Map<string, number>();
             let best: string | null = null;
             let bestN = 0;
@@ -774,7 +810,9 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               counts.set(s, n);
               if (n > bestN) { bestN = n; best = s; }
             }
-            if (best && bestN / buf.length >= 0.55 && best !== lastShapeRef.current) {
+            // Emit whenever a stable majority is found — no change-only gate — so the
+            // shape card updates live as the face angle or expression shifts.
+            if (best && bestN / buf.length >= 0.55) {
               lastShapeRef.current = best;
               onFaceShapeDetect(best as FaceShape);
             }
@@ -785,18 +823,17 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
           // anchor.group.matrix directly each frame. That provides the
           // position + rotation + scale relative to the face.
           //
-          // We calculate delta time to ensure our interpolation is 
+          // We calculate delta time to ensure our interpolation is
           // frame-rate independent, allowing butter-smooth updates on both
           // standard 30-60Hz mobile screens and premium 90-120Hz displays.
           renderer.setAnimationLoop(() => {
             const anchor = mindarInstance.anchors?.[0];
             const glasses = glassesRef.current;
 
-            // Face-shape sampling runs independently of whether a frame model is loaded,
-            // throttled to ~every 6th frame to keep it cheap.
+            // Face-shape sampling runs every 3rd frame (was every 6th) for faster live updates.
             if (anchor?.group?.visible) {
               shapeFrameRef.current++;
-              if (shapeFrameRef.current % 6 === 0) sampleFaceShape();
+              if (shapeFrameRef.current % 3 === 0) sampleFaceShape();
             }
 
             const pose = poseAnchorsRef.current;
@@ -866,10 +903,22 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               glasses.quaternion.slerp(_qTarget, k);
               const sPrev = glasses.scale.x;
               const s = THREE.MathUtils.lerp(sPrev, targetScale, k);
-              glasses.scale.set(s, s, s * templeZ);
+
+              // Normalize vertical Y scale so all DB frame models stretch & fit the face with the
+              // exact same height-to-width proportion as NEW_115 ("911 frame").
+              const TARGET_FRAME_ASPECT = 0.38;
+              const currentAspect = rawAspectRef.current > 0 ? rawAspectRef.current : TARGET_FRAME_ASPECT;
+              const aspectCorrection = TARGET_FRAME_ASPECT / Math.min(currentAspect, 1.0);
+              const sy = s * THREE.MathUtils.clamp(aspectCorrection, 0.70, 1.35);
+
+              glasses.scale.set(s, sy, s * templeZ);
+              glasses.visible = true; // Show glasses when face pose is tracked
 
               reportStatus("tracking");
-            } else if (anchor && !anchor.group.visible) {
+            } else {
+              if (glasses) {
+                glasses.visible = false; // Hide glasses completely when no face is detected
+              }
               reportStatus("no-face");
             }
 

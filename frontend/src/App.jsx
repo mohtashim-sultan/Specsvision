@@ -33,6 +33,8 @@ import OrderSuccessPage from './pages/OrderSuccessPage';
 import WishlistPage from './pages/WishlistPage';
 import ComparePage from './pages/ComparePage';
 
+import VerifyEmailPage from './pages/VerifyEmailPage';
+
 function AppContent() {
   const location = useLocation();
   const isAdmin = location.pathname.startsWith('/admin');
@@ -53,6 +55,7 @@ function AppContent() {
         <Route path="/shop/:productId" element={<ProductDetailPage />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/cart" element={<Cart />} />
         <Route path="/try-on" element={<VirtualTryOnPage />} />
         <Route path="/try-on/:productId" element={<VirtualTryOnPage />} />
