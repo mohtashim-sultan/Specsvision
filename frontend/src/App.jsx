@@ -66,14 +66,7 @@ function AppContent() {
         <Route path="/compare" element={<ComparePage />} />
         <Route path="/checkout" element={<CheckoutPage />} />
         <Route path="/order-success/:orderId" element={<OrderSuccessPage />} />
-        <Route
-          path="/demo"
-          element={
-            <main className="py-20 min-h-[60vh] flex items-center justify-center">
-              Demo (placeholder)
-            </main>
-          }
-        />
+
         {/* Admin Portal */}
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<AdminDashboardPage />} />

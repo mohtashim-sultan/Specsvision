@@ -378,12 +378,9 @@ export default function AdminProductEditPage() {
         toast.error("Invalid stock");
         return;
       }
-      if (!frontView) {
-        toast.error("Front View (3D GLB/GLTF model) is required for virtual try-on.");
-        return;
-      }
 
-      const finalImageUrl = thumbnail || frontView || sideView || "";
+      // Pick 2D preview image (thumbnail or sideView if non-3D) for standard product card displays
+      const finalImageUrl = thumbnail || (sideView && !/\.(glb|gltf)$/i.test(sideView) ? sideView : "");
       const lifestyleStr = lifestyleImages.length > 0 ? JSON.stringify(lifestyleImages) : null;
 
       // Only keep fully-filled color rows (name + valid hex); backend rejects malformed hex.
@@ -520,11 +517,10 @@ export default function AdminProductEditPage() {
           </div>
           <div className="md:col-span-2 grid grid-cols-1 gap-md sm:grid-cols-2">
             <ImageUploadField
-              label="3D Glasses Model (.glb)"
+              label="3D Glasses Model (.glb) [Optional]"
               description="Upload the 3D model file (.glb / .gltf). Powers both the 3D rotating showcase and virtual try-on."
               value={frontView}
               onChange={setFrontView}
-              required
               modelOnly
             />
             <ImageUploadField
