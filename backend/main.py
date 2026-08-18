@@ -44,8 +44,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-import os
-from fastapi.staticfiles import StaticFiles
 
 app.include_router(auth_router, prefix="/api")
 app.include_router(products_router, prefix="/api")
@@ -55,17 +53,6 @@ app.include_router(stripe_router, prefix="/api")
 app.include_router(wishlist_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
 
-os.makedirs("uploads", exist_ok=True)
-
-# glTF types aren't in the OS mime registry on most platforms (notably Windows), so
-# StaticFiles would fall back to text/plain for uploaded try-on models. Registering them
-# keeps the response headers honest and stops proxies treating the payload as text.
-import mimetypes
-
-mimetypes.add_type("model/gltf-binary", ".glb")
-mimetypes.add_type("model/gltf+json", ".gltf")
-
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 
 @app.get("/api/health")

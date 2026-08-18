@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     shipping_fee: Decimal = Decimal("9.99")
     free_shipping_threshold: Decimal = Decimal("100.00")
 
+
+    supabase_url: str = "https://vgcyusidafgtlscefjch.supabase.co/rest/v1/"
+    supabase_service_key: str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZnY3l1c2lkYWZndGxzY2VmamNoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NzA0ODA2OCwiZXhwIjoyMTAyNjI0MDY4fQ.6hjBzY-AKxl4Vds0I6WRt2Y2VYK-GY3avGa3KUPpy0E"
+    supabase_bucket: str = "glasses"
+
     # Login rate limiting (attempts allowed per window, in seconds).
     login_max_attempts: int = 10
     login_window_seconds: int = 300
