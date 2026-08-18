@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useMemo, useRef } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Star, Eye, ShoppingCart, Heart, GitCompare } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
@@ -11,6 +11,9 @@ import ModelViewer from './ModelViewer';
 import toast from 'react-hot-toast';
 
 export default function ProductCard({ product }) {
+  const navigate = useNavigate();
+  const pointerStartRef = useRef({ x: 0, y: 0 });
+
   const { isAuthenticated, refreshCart } = useAuth();
   const { isWishlisted, toggle: toggleWishlist } = useWishlist();
   const { has: inCompare, toggle: toggleCompare } = useCompare();
@@ -21,6 +24,18 @@ export default function ProductCard({ product }) {
     if (!fv || !/\.(glb|gltf)$/i.test(fv)) return null;
     return fv.startsWith('/') ? `${API_BASE}${fv}` : fv;
   }, [product]);
+
+  const handlePointerDown = (e) => {
+    pointerStartRef.current = { x: e.clientX, y: e.clientY };
+  };
+
+  const handlePointerUp = (e) => {
+    const dx = Math.abs(e.clientX - pointerStartRef.current.x);
+    const dy = Math.abs(e.clientY - pointerStartRef.current.y);
+    if (dx < 6 && dy < 6) {
+      navigate(`/shop/${product.id}`);
+    }
+  };
 
   const handleWishlist = (e) => {
     e.preventDefault();
@@ -60,7 +75,11 @@ export default function ProductCard({ product }) {
       }}
     >
       <div className="relative overflow-hidden">
-        <div className="aspect-[4/3] w-full overflow-hidden bg-surface-container-low/40 relative">
+        <div 
+          className="aspect-[4/3] w-full overflow-hidden bg-surface-container-low/40 dark:bg-transparent relative cursor-pointer"
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+        >
           {modelSrc ? (
             <div className="w-full h-full relative">
               <ModelViewer
@@ -72,21 +91,16 @@ export default function ProductCard({ product }) {
                 loading="lazy"
                 className="w-full h-full"
               />
-              <Link
-                to={`/shop/${product.id}`}
-                className="absolute top-0 left-0 right-0 h-10 z-[5]"
-                aria-label={`View details for ${product.name}`}
-              />
             </div>
           ) : (
-            <Link to={`/shop/${product.id}`} className="block w-full h-full overflow-hidden">
+            <div className="w-full h-full overflow-hidden">
               <img
                 src={product.image || "/specs.jpg"}
                 alt={product.name}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 loading="lazy"
               />
-            </Link>
+            </div>
           )}
         </div>
         <div className="absolute top-2 sm:top-3 left-2 sm:left-3 z-10">

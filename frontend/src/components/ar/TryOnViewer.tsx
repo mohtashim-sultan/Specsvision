@@ -61,12 +61,12 @@ const CAMERA_FILTER = "contrast(1.08) saturate(1.14) brightness(1.03)";
 // inter-eye-corner distance (so they're distance-invariant) unless noted.
 const AR = {
   SCALE_K: 2.15,     // frame width ÷ eye-corner distance (bigger = larger glasses)
-  SEAT_DOWN: 0.02,   // seat below the eye line (+ = down toward nose)
-  SEAT_FWD: 0.30,    // push forward off the face so lenses clear the brow (+ = toward camera)
+  SEAT_DOWN: 0.03,   // seat relative to nose bridge anchor (+ = down toward nose)
+  SEAT_FWD: 0.08,    // push forward off the face so lenses clear the brow (+ = toward camera)
   FWD_SIGN: 1,       // flip to -1 if the glasses render facing away from the camera
   TEMPLE_MIN: 0.6,   // clamp range for the auto arm-length stretch
   TEMPLE_MAX: 3.2,
-  SMOOTH: 28,        // pose smoothing (higher = snappier/less lag, lower = smoother/less jitter)
+  SMOOTH: 30,        // pose smoothing (calm, stable pose tracking)
 };
 
 // Landmark indices used to build the head-pose basis (MediaPipe FaceMesh 468 topology).
@@ -107,9 +107,23 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
     const poseAnchorsRef = useRef<Record<string, any> | null>(null);
     /** Smoothed temple-length Z multiplier held across frames. */
     const templeZRef = useRef(1.0);
+    /** Smoothed face-size multiplier: corrects glasses scale for individual face widths. */
+    const faceSizeMultRef = useRef(1.0);
+    /** Smoothed yaw scale compensation multiplier. */
+    const yawCompRef = useRef(1.0);
+    /** Ref tracking whether face pose was active in the previous frame (for instant snap). */
+    const wasTrackingRef = useRef(false);
+    /** Stable scale threshold reference to eliminate 1-pixel scale shimmer. */
+    const lastStableScaleRef = useRef(0);
+    /** Ref tracking previous adjustments state to detect user slider interactions. */
+    const lastAdjRef = useRef<any>(null);
+    /** Counter of frames to bypass deadband when user moves a slider. */
+    const adjChangeCountRef = useRef(0);
     /** Temple-tip reference (group space, pre-scale): height & depth of the arm ends. */
     const armTipYRef = useRef(0);
     const armTipZRef = useRef(-1);
+    /** Real-time frameSrc ref to prevent closure race condition on initial route mount. */
+    const frameSrcRef = useRef<string | null | undefined>(frameSrc);
     const loadIdRef = useRef(0);
     /**
      * Re-runs the cover-fit layout. Owned by the init effect; called from prop-change
@@ -241,9 +255,9 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                   mat.depthWrite = true;
                   child.renderOrder = 10;
 
-                  if (mat.transparent) {
-                    mat.opacity = Math.max(0.6, Math.min(mat.opacity, 0.85));
-                  }
+                  // Preserve the GLB's authored opacity — do not override it.
+                  // Clamping to ≥0.6 was turning lightly-tinted lenses into
+                  // opaque milky glass and washing out the material's color.
 
                   if (mat.map) mat.map.colorSpace = THREE.SRGBColorSpace;
                   if (mat.emissiveMap) mat.emissiveMap.colorSpace = THREE.SRGBColorSpace;
@@ -468,7 +482,7 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               maxTrack: 1,
               shouldFaceUser: true,
               filterMinCF: 0.001,   // calm, jitter-free when the head is still
-              filterBeta: 10,       // follows movement smoothly without shaking
+              filterBeta: 10,       // smooth, vibration-free movement tracking
               // Suppress MindAR's stock loading/scanning/error overlays — this component
               // renders its own status chrome, and MindAR's injected its own absolutely
               // positioned layers into the same container.
@@ -490,8 +504,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
           const isCoarsePointer = window.matchMedia?.("(pointer: coarse)").matches ?? false;
           renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isCoarsePointer ? 1.5 : 2));
           renderer.outputColorSpace = THREE.SRGBColorSpace;
-          renderer.toneMapping = THREE.ACESFilmicToneMapping;
-          renderer.toneMappingExposure = 1.1;
+          renderer.toneMapping = THREE.LinearToneMapping;    // pass-through: no color curve, GLB material colors render exactly as authored (blue stays blue)
+          renderer.toneMappingExposure = 1.0;               // neutral exposure — NeutralToneMapping doesn't need the ACES compensation boost
 
           // Studio environment reflection map — gives PBR metal/acetate materials glossy 3D reflections
           try {
@@ -618,19 +632,21 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             applyFit();
           };
 
-          // Balanced 3D studio lighting — highlights metal/acetate frame curves without flattening shadows
-          scene.add(new THREE.HemisphereLight(0xffffff, 0x444466, 0.7));
-          scene.add(new THREE.AmbientLight(0xffffff, 0.45)); // Controlled ambient so 3D depth and shadows remain crisp
+          // Softer studio lighting — environment map handles PBR reflections;
+          // direct lights only define soft depth/shadow. Total ≈1.75 units
+          // prevents white-light flooding that was bleaching coloured materials.
+          scene.add(new THREE.HemisphereLight(0xffffff, 0x444466, 0.4));
+          scene.add(new THREE.AmbientLight(0xffffff, 0.2)); // kept low so 3D depth stays crisp
 
-          const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+          const keyLight = new THREE.DirectionalLight(0xffffff, 0.6);
           keyLight.position.set(1, 2, 2);
           scene.add(keyLight);
 
-          const fillLight = new THREE.DirectionalLight(0xffffff, 0.7);
+          const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
           fillLight.position.set(-1, 0.5, 1.5);
           scene.add(fillLight);
 
-          const topLight = new THREE.DirectionalLight(0xffffff, 0.5);
+          const topLight = new THREE.DirectionalLight(0xffffff, 0.25);
           topLight.position.set(0, 3, 0);
           scene.add(topLight);
 
@@ -655,10 +671,9 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             poseAnchorsRef.current = poseAnchors;
           }
 
-          // Read-only anchors used purely to sample landmark positions for face-shape
-          // classification (no meshes attached). Reuses MindAR's MediaPipe face mesh —
-          // no second tracker, so it adds no meaningful tracking cost.
-          if (onFaceShapeDetect) {
+          // Read-only anchors used to sample landmark positions for face-shape
+          // classification and face-size auto-fit (no meshes attached).
+          {
             const shapeAnchors: Record<string, any> = {};
             for (const [key, idx] of Object.entries(FACE_SHAPE_LANDMARKS)) {
               shapeAnchors[key] = mindarInstance.addAnchor(idx);
@@ -666,10 +681,9 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             shapeAnchorsRef.current = shapeAnchors;
           }
 
-          // Face mesh occluder — hides the temple arms where they pass behind the
-          // head. polygonOffset recesses its depth slightly so it stops clipping the
-          // FRONT frame and lens edges at the sides of the face (the "cut off left/
-          // right" artifact) while still occluding anything genuinely behind it.
+          // Face mesh occluder — hides the temple arms where they pass behind the head.
+          // Negative polygonOffset pushes its depth value BEHIND the face surface, preventing
+          // it from clipping front-facing frame & lens edges at the nose/cheek sides on turns.
           const faceMesh = mindarInstance.addFaceMesh();
           faceMesh.material = new THREE.MeshBasicMaterial({
             colorWrite: false,
@@ -677,8 +691,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             depthTest: true,
             side: THREE.DoubleSide,
             polygonOffset: true,
-            polygonOffsetFactor: 2,
-            polygonOffsetUnits: 4,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -4,
           });
           faceMesh.renderOrder = 0;
           faceMesh.visible = true;
@@ -730,6 +744,12 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
 
           if (cancelled) return;
           reportStatus("ready");
+
+          // Load initial glasses using fresh frameSrcRef (prevents closure race condition on route navigation)
+          const initialSrc = frameSrcRef.current;
+          if (initialSrc && isModelSrc(initialSrc)) {
+            loadFrame(initialSrc);
+          }
 
           // ── Fix element layering ──────────────────────────────────────
           const video = mindarInstance.video;
@@ -792,6 +812,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
           // Scratch vectors reused each frame for the ear auto-fit (no per-frame allocation).
           const _earL = new THREE.Vector3();
           const _earR = new THREE.Vector3();
+          const _cheekL = new THREE.Vector3();
+          const _cheekR = new THREE.Vector3();
           const _shapeVec = new THREE.Vector3();
           // Scratch objects for the head-pose placement (no per-frame allocation).
           const _eyeL = new THREE.Vector3();
@@ -868,8 +890,9 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             const eyeRg = pose?.eyeR?.group;
             const foreg = pose?.foreheadTop?.group;
             const ching = pose?.chin?.group;
-            const poseReady =
-              !!glasses && !!eyeLg?.visible && !!eyeRg?.visible && !!foreg?.visible && !!ching?.visible;
+            const faceLandmarksVisible =
+              !!eyeLg?.visible && !!eyeRg?.visible && !!foreg?.visible && !!ching?.visible;
+            const poseReady = !!glasses && faceLandmarksVisible;
 
             if (poseReady) {
               const adj = adjustmentsRef.current;
@@ -899,8 +922,67 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
 
               const eyeDist = _eyeL.distanceTo(_eyeR);
 
-              // Width scales with the eyes → constant real-world fit at any camera distance.
-              const targetScale = (eyeDist * AR.SCALE_K / rawWidthRef.current) * adj.scale;
+              // ── Face Size Auto-Fit ───────────────────────────────────────
+              // Cheek landmarks 234/454 are registered as shape anchors ("cheekL"/"cheekR").
+              // We measure real cheekbone width in world space vs eye separation to auto-adapt
+              // glasses size for wider or narrower faces.
+              const REFERENCE_FACE_RATIO = 1.65; // avg cheekWidth / eyeDist
+              const sa = shapeAnchorsRef.current;
+              const cheekLg = sa?.cheekL?.group;
+              const cheekRg = sa?.cheekR?.group;
+
+              let faceSizeMultiplier = faceSizeMultRef.current;
+              if (cheekLg?.visible && cheekRg?.visible) {
+                cheekLg.getWorldPosition(_cheekL);
+                cheekRg.getWorldPosition(_cheekR);
+                const cheekWidth = _cheekL.distanceTo(_cheekR);
+                if (cheekWidth > 1e-6 && eyeDist > 1e-6) {
+                  const rawRatio = cheekWidth / eyeDist;
+                  const rawMult = rawRatio / REFERENCE_FACE_RATIO;
+                  const targetMult = THREE.MathUtils.clamp(rawMult, 0.80, 1.30);
+                  // Smooth slowly (k * 0.10) so scale changes are rock-solid without shimmer
+                  faceSizeMultRef.current = THREE.MathUtils.lerp(faceSizeMultRef.current, targetMult, k * 0.10);
+                  faceSizeMultiplier = faceSizeMultRef.current;
+                }
+              }
+
+              // ── Yaw-Aware Scale Compensation ─────────────────────────────
+              // Compensates perspective foreshortening of eyeDist when head turns 45°.
+              // Lerped (k * 0.15) to prevent scale vibration from raw _right.z noise.
+              const yawFactor = Math.sqrt(Math.max(0, 1.0 - _right.z * _right.z));
+              const rawYawComp = THREE.MathUtils.clamp(1.0 / Math.max(yawFactor, 0.6), 1.0, 1.35);
+              yawCompRef.current = THREE.MathUtils.lerp(yawCompRef.current, rawYawComp, k * 0.15);
+              const yawComp = yawCompRef.current;
+
+              // ── Detect User Slider Adjustments ────────────────────────────
+              if (lastAdjRef.current) {
+                const diffX = Math.abs(adj.positionX - lastAdjRef.current.positionX);
+                const diffY = Math.abs(adj.positionY - lastAdjRef.current.positionY);
+                const diffZ = Math.abs(adj.positionZ - lastAdjRef.current.positionZ);
+                const diffRotX = Math.abs(adj.rotationX - lastAdjRef.current.rotationX);
+                const diffRotY = Math.abs(adj.rotationY - lastAdjRef.current.rotationY);
+                const diffRotZ = Math.abs(adj.rotationZ - lastAdjRef.current.rotationZ);
+                const diffScale = Math.abs(adj.scale - lastAdjRef.current.scale);
+                if (diffX > 1e-4 || diffY > 1e-4 || diffZ > 1e-4 || diffRotX > 1e-4 || diffRotY > 1e-4 || diffRotZ > 1e-4 || diffScale > 1e-4) {
+                  adjChangeCountRef.current = 6; // Bypass deadband for 6 frames on slider interaction
+                }
+              }
+              lastAdjRef.current = { ...adj };
+              const isSliderActive = adjChangeCountRef.current > 0;
+              if (isSliderActive) adjChangeCountRef.current--;
+
+              const rawTargetScale = (eyeDist * AR.SCALE_K / rawWidthRef.current) * adj.scale * faceSizeMultiplier * yawComp;
+
+              // ── 1. Scale Deadband (Zero Shimmer) ──────────────────────────
+              if (lastStableScaleRef.current === 0) {
+                lastStableScaleRef.current = rawTargetScale;
+              } else {
+                const scaleDeltaRatio = Math.abs(rawTargetScale - lastStableScaleRef.current) / lastStableScaleRef.current;
+                if (scaleDeltaRatio > 0.015 || isSliderActive) {
+                  lastStableScaleRef.current = rawTargetScale;
+                }
+              }
+              const targetScale = lastStableScaleRef.current;
 
               // ── Auto-stretch temple length to reach the ears ─────────────
               const earLg = mindarInstance.anchors?.[1]?.group;
@@ -919,34 +1001,69 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               }
               const templeZ = templeZRef.current * adj.templeLength;
 
-              // ── Position: eye midpoint + head-space seat offsets ─────────
-              _pos.addVectors(_eyeL, _eyeR).multiplyScalar(0.5);
-              _pos.addScaledVector(_up, -(AR.SEAT_DOWN * eyeDist) + adj.positionY); // down toward nose
-              _pos.addScaledVector(_fwd, AR.SEAT_FWD * eyeDist + adj.positionZ);    // forward off brow
-              _pos.addScaledVector(_right, adj.positionX);
+              // ── Position Base: Nose Bridge Landmark + EyeDist Scaled User Offsets ──
+              const noseAnchor = mindarInstance.anchors?.[0]?.group;
+              if (noseAnchor?.visible) {
+                noseAnchor.getWorldPosition(_pos);
+              } else {
+                _pos.addVectors(_eyeL, _eyeR).multiplyScalar(0.5); // fallback
+              }
 
-              // Smooth toward the target pose (kills residual jitter without adding lag).
-              glasses.position.lerp(_pos, k);
-              glasses.quaternion.slerp(_qTarget, k);
-              const sPrev = glasses.scale.x;
-              const s = THREE.MathUtils.lerp(sPrev, targetScale, k);
+              // Position offsets scale proportionally with eyeDist so sliders respond predictably
+              const userY = adj.positionY * eyeDist * 2.5;
+              const userZ = adj.positionZ * eyeDist * 2.5;
+              const userX = adj.positionX * eyeDist * 2.5;
 
-              // Normalize vertical Y scale so all DB frame models stretch & fit the face with the
-              // exact same height-to-width proportion as NEW_115 ("911 frame").
+              _pos.addScaledVector(_up, -(AR.SEAT_DOWN * eyeDist) + userY);
+              _pos.addScaledVector(_fwd, AR.SEAT_FWD * eyeDist + userZ);
+              _pos.addScaledVector(_right, userX);
+
+              // ── 2. Positional & Rotational Deadband + Adaptive Lerp ────────
+              const posDelta = glasses.position.distanceTo(_pos);
+              const rotDelta = glasses.quaternion.angleTo(_qTarget);
+
+              const kPosRate = posDelta < 0.002 && !isSliderActive ? 6 : 30;
+              const kRotRate = rotDelta < 0.008 && !isSliderActive ? 6 : 30;
+
+              const kPos = 1.0 - Math.exp(-kPosRate * clampedDt);
+              const kRot = 1.0 - Math.exp(-kRotRate * clampedDt);
+
               const TARGET_FRAME_ASPECT = 0.38;
               const currentAspect = rawAspectRef.current > 0 ? rawAspectRef.current : TARGET_FRAME_ASPECT;
               const aspectCorrection = TARGET_FRAME_ASPECT / Math.min(currentAspect, 1.0);
-              const sy = s * THREE.MathUtils.clamp(aspectCorrection, 0.70, 1.35);
 
-              glasses.scale.set(s, sy, s * templeZ);
+              // ── 3. First-Frame Instant Snap ────────────────────────────────
+              if (!wasTrackingRef.current) {
+                glasses.position.copy(_pos);
+                glasses.quaternion.copy(_qTarget);
+                glasses.scale.set(targetScale, targetScale * aspectCorrection, targetScale * templeZ);
+                wasTrackingRef.current = true;
+              } else {
+                if (posDelta > 0.0012 || isSliderActive) {
+                  glasses.position.lerp(_pos, kPos);
+                }
+                if (rotDelta > 0.007 || isSliderActive) {
+                  glasses.quaternion.slerp(_qTarget, kRot);
+                }
+                const sPrev = glasses.scale.x;
+                const s = THREE.MathUtils.lerp(sPrev, targetScale, kPos);
+                const sy = s * THREE.MathUtils.clamp(aspectCorrection, 0.70, 1.35);
+                glasses.scale.set(s, sy, s * templeZ);
+              }
+
               glasses.visible = true; // Show glasses when face pose is tracked
-
               reportStatus("tracking");
             } else {
+              wasTrackingRef.current = false;
+              lastStableScaleRef.current = 0;
               if (glasses) {
                 glasses.visible = false; // Hide glasses completely when no face is detected
               }
-              reportStatus("no-face");
+              // Only report "no-face" if glasses ARE loaded but face landmarks are missing.
+              // If glasses model is null (still fetching API or GLB), keep status as "loading" / "ready".
+              if (glasses && !faceLandmarksVisible) {
+                reportStatus("no-face");
+              }
             }
 
             renderer.render(scene, camera);
@@ -983,6 +1100,7 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
     // ── React to frameSrc changes ──────────────────────────────────────────────
 
     useEffect(() => {
+      frameSrcRef.current = frameSrc;
       if (frameSrc && isModelSrc(frameSrc) && mindarRef.current) {
         loadFrame(frameSrc);
       }
