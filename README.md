@@ -7,7 +7,7 @@
 ### **Backend (`backend/.env`)**
 Create a `backend/.env` file:
 
-```env
+ ```env
 SECRET_KEY=your-secure-random-secret-key
 ACCESS_TOKEN_EXPIRE_MINUTES=10080
 DATABASE_URL=postgresql+psycopg://postgres:admin@localhost:5432/specsvision
