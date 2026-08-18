@@ -11,5 +11,8 @@
     "backend:migrate": "cd backend && alembic upgrade head",
     "backend:start": "cd backend && python -m uvicorn main:app --reload",
     "backend:check": "cd backend && python -c \"from main import app; print('app import ok')\""
+  },
+  "devDependencies": {
+    "supabase": "^2.115.0"
   }
 }
