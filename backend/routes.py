@@ -59,6 +59,7 @@ from schemas import (
 )
 from security import create_access_token, hash_password, verify_password
 import stripe_service
+import storage_service
 from sentiment import classify as classify_sentiment
 
 # Static coupon table: code -> (kind, value). "percent" is a fraction of subtotal, "flat" a $ amount.
@@ -1441,40 +1442,34 @@ def upload_file(
             )
         max_bytes = settings.max_upload_bytes
 
-    # Enforce the size limit while streaming so a huge upload can't exhaust memory/disk.
-    os.makedirs("uploads", exist_ok=True)
+    # Read the file into memory in chunks, enforcing the size limit before uploading.
     filename = f"{uuid.uuid4()}{ext}"
-    filepath = os.path.join("uploads", filename)
+    chunks: list[bytes] = []
     written = 0
     checked_header = False
-    try:
-        with open(filepath, "wb") as buffer:
-            while chunk := file.file.read(1024 * 1024):
-                # Validate the real bytes before committing the rest of the stream —
-                # the extension alone can't be trusted for models (see _MODEL_UPLOAD_TYPES).
-                if is_model and not checked_header:
-                    _validate_model_header(ext, chunk[:64])
-                    checked_header = True
-                written += len(chunk)
-                if written > max_bytes:
-                    raise HTTPException(
-                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                        detail=f"File exceeds the {max_bytes // (1024 * 1024)} MB upload limit.",
-                    )
-                buffer.write(chunk)
+    while chunk := file.file.read(1024 * 1024):
+        # Validate the real bytes before accepting the rest of the stream.
         if is_model and not checked_header:
+            _validate_model_header(ext, chunk[:64])
+            checked_header = True
+        written += len(chunk)
+        if written > max_bytes:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded model file is empty."
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File exceeds the {max_bytes // (1024 * 1024)} MB upload limit.",
             )
-    except HTTPException:
-        if os.path.exists(filepath):
-            os.remove(filepath)
-        raise
-    except OSError:
-        if os.path.exists(filepath):
-            os.remove(filepath)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to store upload.")
-    return {"url": f"/uploads/{filename}"}
+        chunks.append(chunk)
+    if is_model and not checked_header:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded model file is empty."
+        )
+    file_bytes = b"".join(chunks)
+    content_type = file.content_type or ("model/gltf-binary" if is_model else "application/octet-stream")
+    try:
+        public_url = storage_service.upload_to_supabase(file_bytes, filename, content_type)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+    return {"url": public_url}
 
 
 @stripe_router.post("/webhook", status_code=status.HTTP_200_OK)
