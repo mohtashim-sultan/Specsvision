@@ -168,7 +168,7 @@ export default function Cart() {
                     style={{ backgroundColor: 'var(--surface-bg-secondary)' }}
                   >
                     <img
-                      src={item.product.image}
+                      src={displayImageUrl(item.product)}
                       alt={item.product.name}
                       className="w-full h-full object-cover"
                     />

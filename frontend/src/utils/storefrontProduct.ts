@@ -20,7 +20,7 @@ export type StorefrontProduct = Product & {
 
 export function displayImageUrl(p: Product): string {
   const img = p.thumbnail?.trim() || p.image_url?.trim();
-  if (!img) return "/specs.jpg";
+  if (!img || /\.(glb|gltf)$/i.test(img)) return "/specs.jpg";
   if (img.startsWith("/")) {
     return `${API_BASE}${img}`;
   }

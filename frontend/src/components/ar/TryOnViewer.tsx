@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment";
 import { FACE_SHAPE_LANDMARKS, classifyFaceShape, type FaceShape } from "./faceShape";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -231,17 +232,23 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             if (loadIdRef.current !== thisLoad) return;
             const model = gltf.scene;
 
-            // Ensure depth is correct so glasses render in front of occluder
+            // Ensure depth and sRGB texture encoding are set so 3D materials reflect lighting correctly
             model.traverse((child) => {
-              if (child instanceof THREE.Mesh) {
-                child.material.depthTest = true;
-                child.material.depthWrite = true;
-                child.renderOrder = 10;
+              if (child instanceof THREE.Mesh && child.material) {
+                const materials = Array.isArray(child.material) ? child.material : [child.material];
+                materials.forEach((mat: any) => {
+                  mat.depthTest = true;
+                  mat.depthWrite = true;
+                  child.renderOrder = 10;
 
-                // Keep transparent lenses see-through but prominent (was 0.3 → too ghostly)
-                if (child.material.transparent) {
-                  child.material.opacity = Math.max(0.6, Math.min(child.material.opacity, 0.85));
-                }
+                  if (mat.transparent) {
+                    mat.opacity = Math.max(0.6, Math.min(mat.opacity, 0.85));
+                  }
+
+                  if (mat.map) mat.map.colorSpace = THREE.SRGBColorSpace;
+                  if (mat.emissiveMap) mat.emissiveMap.colorSpace = THREE.SRGBColorSpace;
+                  mat.needsUpdate = true;
+                });
               }
             });
 
@@ -482,6 +489,22 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
           // native resolution, so this is what actually bounds per-frame GPU cost.
           const isCoarsePointer = window.matchMedia?.("(pointer: coarse)").matches ?? false;
           renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isCoarsePointer ? 1.5 : 2));
+          renderer.outputColorSpace = THREE.SRGBColorSpace;
+          renderer.toneMapping = THREE.ACESFilmicToneMapping;
+          renderer.toneMappingExposure = 1.1;
+
+          // Studio environment reflection map — gives PBR metal/acetate materials glossy 3D reflections
+          try {
+            const pmremGenerator = new THREE.PMREMGenerator(renderer);
+            pmremGenerator.compileEquirectangularShader();
+            const roomEnv = new RoomEnvironment();
+            const envTexture = pmremGenerator.fromScene(roomEnv).texture;
+            scene.environment = envTexture;
+            roomEnv.dispose();
+            pmremGenerator.dispose();
+          } catch (e) {
+            console.warn("Failed to generate scene environment map:", e);
+          }
 
           // MindAR's own _resize handles the camera projection (fov/aspect from the tracker's
           // intrinsics) and the drawing-buffer size. We keep that, but strip its DOM geometry
@@ -595,17 +618,21 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             applyFit();
           };
 
-          // Lighting setup — brighter + a front fill so the frame reads
-          // prominently (catches highlights on metal/plastic instead of looking flat).
-          scene.add(new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1.1));
-          scene.add(new THREE.AmbientLight(0xffffff, 1.5));
-          const dirLight = new THREE.DirectionalLight(0xffffff, 1.6);
-          dirLight.position.set(0, 1, 1);
-          scene.add(dirLight);
-          // Camera-facing fill light — puts a clean highlight on the front frame.
-          const fillLight = new THREE.DirectionalLight(0xffffff, 1.0);
-          fillLight.position.set(0, 0.2, 1.5);
+          // Balanced 3D studio lighting — highlights metal/acetate frame curves without flattening shadows
+          scene.add(new THREE.HemisphereLight(0xffffff, 0x444466, 0.7));
+          scene.add(new THREE.AmbientLight(0xffffff, 0.45)); // Controlled ambient so 3D depth and shadows remain crisp
+
+          const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+          keyLight.position.set(1, 2, 2);
+          scene.add(keyLight);
+
+          const fillLight = new THREE.DirectionalLight(0xffffff, 0.7);
+          fillLight.position.set(-1, 0.5, 1.5);
           scene.add(fillLight);
+
+          const topLight = new THREE.DirectionalLight(0xffffff, 0.5);
+          topLight.position.set(0, 3, 0);
+          scene.add(topLight);
 
           // Face anchor at nose bridge — the glasses parent (anchors[0]).
           mindarInstance.addAnchor(168);
