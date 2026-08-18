@@ -121,7 +121,7 @@ export default function VirtualTryOnPage() {
   useEffect(() => {
     if (selectedId === null) return;
     const getInitialAdjustments = (): Adjustments => {
-      const saved = localStorage.getItem(`specsvision_adj_v12_${selectedId}`);
+      const saved = localStorage.getItem(`specsvision_adj_v14_${selectedId}`);
       if (saved) {
         try {
           return JSON.parse(saved);
@@ -203,7 +203,7 @@ export default function VirtualTryOnPage() {
     setAdjustments((prev) => {
       const next = { ...prev, [key]: value };
       if (selectedId !== null) {
-        localStorage.setItem(`specsvision_adj_v12_${selectedId}`, JSON.stringify(next));
+        localStorage.setItem(`specsvision_adj_v14_${selectedId}`, JSON.stringify(next));
       }
       return next;
     });
@@ -241,7 +241,7 @@ export default function VirtualTryOnPage() {
     setAdjustments(next);
     setActivePreset(presetType);
     if (selectedId !== null) {
-      localStorage.setItem(`specsvision_adj_v12_${selectedId}`, JSON.stringify(next));
+      localStorage.setItem(`specsvision_adj_v14_${selectedId}`, JSON.stringify(next));
     }
     toast.success(`Preset "${presetType}" applied!`);
   };
@@ -253,7 +253,7 @@ export default function VirtualTryOnPage() {
     setAdjustments(next);
     setActivePreset(null);
     if (selectedId !== null) {
-      localStorage.removeItem(`specsvision_adj_v12_${selectedId}`);
+      localStorage.removeItem(`specsvision_adj_v14_${selectedId}`);
     }
     toast.success("Adjustments reset to defaults!");
   };
@@ -922,6 +922,26 @@ export default function VirtualTryOnPage() {
           </div>
         </div>
 
+        {/* Live Face Shape Detection Banner — desktop sidebar */}
+        <div
+          style={{
+            maxHeight: detectedShape ? '80px' : '0px',
+            opacity: detectedShape ? 1 : 0,
+            overflow: 'hidden',
+            transition: 'max-height 0.35s ease, opacity 0.3s ease',
+          }}
+        >
+          {detectedShape && (
+            <div className="mx-3 mb-2 flex items-start gap-2 rounded-xl border border-purple-500/20 bg-purple-500/8 px-3 py-2">
+              <span className="mt-0.5 text-sm leading-none">✨</span>
+              <p className="text-[10px] leading-snug text-slate-300">
+                <span className="font-bold text-purple-300">{detectedShape} face</span>{" detected — "}
+                <span className="text-slate-400">{SHAPE_GUIDE[detectedShape].recommend.slice(0, 3).join(", ")} frames suit you best</span>
+              </p>
+            </div>
+          )}
+        </div>
+
         {/* Catalog List */}
         <div className="flex-1 overflow-y-auto min-h-0 px-3 py-3 space-y-2.5 custom-scrollbar">
           {loadingCatalog ? (
@@ -1011,6 +1031,18 @@ export default function VirtualTryOnPage() {
             ))}
           </select>
         </div>
+
+        {/* Live Face Shape Detection Banner — mobile carousel */}
+        {detectedShape && (
+          <div className="flex items-center gap-1.5 px-4 pb-1.5 shrink-0">
+            <span className="text-xs leading-none">✨</span>
+            <p className="text-[10px] leading-snug text-slate-300">
+              <span className="font-bold text-purple-300">{detectedShape} face</span>
+              {" — "}
+              <span className="text-slate-400">{SHAPE_GUIDE[detectedShape].recommend.slice(0, 3).join(", ")} suit you best</span>
+            </p>
+          </div>
+        )}
 
         <div className="flex gap-3 overflow-x-auto px-4 pt-1 pb-[max(1rem,env(safe-area-inset-bottom))] snap-x snap-mandatory scrollbar-none">
           {loadingCatalog ? (

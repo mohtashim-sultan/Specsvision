@@ -358,7 +358,7 @@
 .tryon-studio .bg-slate-800\2f 80 { background: #f3e8ff !important; }
 .tryon-studio .bg-slate-900\2f 60 { background: #faf5ff !important; }
 .tryon-studio .bg-slate-900\2f 30 { background: #ffffff !important; }
-.tryon-studio .bg-slate-900\\/animate-pulse { background: #f3e8ff !important; }
+.tryon-studio .bg-slate-900\2f animate-pulse { background: #f3e8ff !important; }
 .tryon-studio .bg-purple-500\2f 10 { background: rgba(147, 51, 234, 0.08) !important; }
 .tryon-studio .bg-purple-500\2f 15 { background: rgba(147, 51, 234, 0.12) !important; }
 .tryon-studio .bg-purple-500\2f 20 { background: rgba(147, 51, 234, 0.15) !important; }
@@ -366,7 +366,7 @@
 .tryon-studio .bg-gradient-to-br.from-purple-900\2f 50.to-pink-900\2f 30 {
   background: linear-gradient(135deg, rgba(147, 51, 234, 0.08), rgba(219, 39, 119, 0.05)) !important;
 }
-.tryon-studio .border-purple-500\\2f 20 { border-color: rgba(147, 51, 234, 0.2) !important; }
+.tryon-studio .border-purple-500\2f 20 { border-color: rgba(147, 51, 234, 0.2) !important; }
 .tryon-studio .text-white { color: #111827 !important; }
 .tryon-studio .text-slate-200 { color: #1f2937 !important; }
 .tryon-studio .text-slate-300 { color: #374151 !important; }
