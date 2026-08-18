@@ -1,0 +1,10 @@
+# Netlify configuration for SpecsVision monorepo root
+[build]
+  base = "frontend"
+  publish = "build"
+  command = "npm run build"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
