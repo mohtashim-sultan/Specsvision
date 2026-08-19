@@ -6,7 +6,6 @@ import {
   MessageSquareText,
   Mail,
   Sparkles,
-  Upload,
   User,
   AtSign,
   Phone as PhoneIcon,
@@ -93,14 +92,14 @@ export default function Contact() {
                 Need help with fit or try-on?
               </h1>
               <p className="mt-2 text-sm sm:text-base" style={{ color: 'var(--text-secondary)' }}>
-                Our AI-powered try-on makes finding the perfect frames easy. Chat, upload a photo,
+                Our AI-powered try-on makes finding the perfect frames easy. Chat with us
                 or schedule a free trial.
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link to="/try-on" className="rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 px-4 py-2 text-xs sm:text-sm font-semibold text-white min-h-[40px] inline-flex items-center shadow-md shadow-purple-500/25">
                   Live Webcam Fit
                 </Link>
-                {['Upload Photo', 'Schedule Free Trial'].map(label => (
+                {['Schedule Free Trial'].map(label => (
                   <button key={label} className="rounded-xl px-4 py-2 text-xs sm:text-sm font-semibold min-h-[40px]" style={{ border: '2px solid var(--border-color)', color: 'var(--text-accent)' }}>
                     {label}
                   </button>
@@ -239,7 +238,7 @@ export default function Contact() {
                 <p className="text-xs font-medium" style={{ color: 'var(--text-accent)' }}>Best Match</p>
               </div>
               <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                Live webcam or uploaded photo - adjust lighting and angle.
+                Live webcam - adjust lighting and angle for the best match.
               </p>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 {[
@@ -260,15 +259,14 @@ export default function Contact() {
                   </div>
                 ))}
               </div>
-              <div className="mt-3 flex gap-2">
-                <button className="flex-1 inline-flex justify-center items-center gap-1 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 px-3 py-2 text-xs font-semibold text-white shadow-md">
+              <div className="mt-3">
+                <Link
+                  to="/try-on"
+                  className="w-full inline-flex justify-center items-center gap-1 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 px-3 py-2 text-xs font-semibold text-white shadow-md"
+                >
                   <Sparkles className="w-3.5 h-3.5" />
                   Live
-                </button>
-                <button className="flex-1 inline-flex justify-center items-center gap-1 rounded-xl px-3 py-2 text-xs font-semibold" style={{ border: '2px solid var(--border-color)', color: 'var(--text-accent)' }}>
-                  <Upload className="w-3.5 h-3.5" />
-                  Upload
-                </button>
+                </Link>
               </div>
             </motion.article>
 
