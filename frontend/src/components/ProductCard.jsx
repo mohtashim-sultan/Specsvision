@@ -1,13 +1,12 @@
 import React, { useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Star, Eye, ShoppingCart, Heart, GitCompare } from 'lucide-react';
+import { Star, Eye, ShoppingCart, Heart, GitCompare, Box } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useWishlist } from '../context/WishlistContext';
 import { useCompare } from '../context/CompareContext';
 import { addCartItem } from '../api/cartApi';
 import { API_BASE } from '../config/env';
-import ModelViewer from './ModelViewer';
 import toast from 'react-hot-toast';
 
 export default function ProductCard({ product }) {
@@ -80,27 +79,27 @@ export default function ProductCard({ product }) {
           onPointerDown={handlePointerDown}
           onPointerUp={handlePointerUp}
         >
-          {modelSrc ? (
-            <div className="w-full h-full relative">
-              <ModelViewer
-                src={modelSrc}
-                alt={product.name}
-                minHeight="100%"
-                showArButton={false}
-                showHint={false}
-                loading="lazy"
-                className="w-full h-full"
-              />
-            </div>
-          ) : (
-            <div className="w-full h-full overflow-hidden">
-              <img
-                src={product.image || "/specs.jpg"}
-                alt={product.name}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                loading="lazy"
-              />
-            </div>
+          {/* Image only. This card used to mount a live <model-viewer> for every product
+              that had a GLB, which meant a Shop page opened as many WebGL contexts as there
+              were frames -- each auto-rotating, since autoRotate defaults to true -- and
+              pulled every model down. Measured against the real catalogue that is 122MB and
+              nine render loops for a grid of thumbnails. The models are still one tap away
+              on the product page, which is where someone actually wants to turn one around. */}
+          <div className="w-full h-full overflow-hidden">
+            <img
+              src={product.image || "/specs.jpg"}
+              alt={product.name}
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              loading="lazy"
+              decoding="async"
+            />
+          </div>
+          {/* Costs nothing to render and tells the shopper the model exists. */}
+          {modelSrc && (
+            <span className="pointer-events-none absolute bottom-2 right-2 z-10 flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur-sm">
+              <Box className="h-3 w-3" />
+              3D
+            </span>
           )}
         </div>
         <div className="absolute top-2 sm:top-3 left-2 sm:left-3 z-10">
