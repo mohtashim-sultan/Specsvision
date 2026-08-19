@@ -488,7 +488,7 @@ export default function VirtualTryOnPage() {
 
             {/* Glassmorphic Settings Drawer (Adjustments) */}
             {showAdjust && (
-              <div className="glass-chrome fixed md:absolute bottom-0 left-0 right-0 md:left-4 md:top-4 md:bottom-4 z-30 md:z-20 w-full md:w-[340px] max-h-[44dvh] md:max-h-none rounded-t-3xl md:rounded-3xl px-4 pt-2 md:pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:pb-5 shadow-[0_-10px_40px_rgba(0,0,0,0.85)] md:shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom md:slide-in-from-left-5 duration-300 md:duration-200">
+              <div className="glass-chrome fixed md:absolute bottom-0 left-0 right-0 md:left-4 md:top-4 md:bottom-4 z-30 md:z-20 w-full md:w-[340px] max-h-[52dvh] md:max-h-none rounded-t-3xl md:rounded-3xl px-4 pt-2 md:pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:pb-5 shadow-[0_-10px_40px_rgba(0,0,0,0.85)] md:shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom md:slide-in-from-left-5 duration-300 md:duration-200">
                 {/* Grab bar for mobile bottom sheet */}
                 <div className="w-10 h-1 bg-slate-850 rounded-full mx-auto mb-2 md:hidden shrink-0" />
 
@@ -530,7 +530,7 @@ export default function VirtualTryOnPage() {
                     <>
                       {/* Position Y: Height (Up / Down) */}
                       <div>
-                        <div className="flex justify-between mb-1.5">
+                        <div className="flex justify-between mb-1 md:mb-1.5">
                           <span className="text-slate-300 font-medium">Height (Up / Down)</span>
                           <span className="text-purple-400 font-bold font-mono">
                             {adjustments.y > activeBase.y ? "+" : ""}
@@ -545,7 +545,7 @@ export default function VirtualTryOnPage() {
                             step="0.001"
                             value={adjustments.y}
                             onChange={(e) => updateAdjustment("y", parseFloat(e.target.value))}
-                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                            className="flex-1 h-2 md:h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg touch-manipulation"
                           />
                           <button
                             type="button"
@@ -561,7 +561,7 @@ export default function VirtualTryOnPage() {
 
                       {/* Position Z: Depth (In / Out) */}
                       <div>
-                        <div className="flex justify-between mb-1.5">
+                        <div className="flex justify-between mb-1 md:mb-1.5">
                           <span className="text-slate-300 font-medium">Depth (In / Out)</span>
                           <span className="text-purple-400 font-bold font-mono">
                             {adjustments.z > activeBase.z ? "+" : ""}
@@ -576,7 +576,7 @@ export default function VirtualTryOnPage() {
                             step="0.001"
                             value={adjustments.z}
                             onChange={(e) => updateAdjustment("z", parseFloat(e.target.value))}
-                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                            className="flex-1 h-2 md:h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg touch-manipulation"
                           />
                           <button
                             type="button"
@@ -592,7 +592,7 @@ export default function VirtualTryOnPage() {
 
                       {/* Position X: Centering (Left / Right) */}
                       <div>
-                        <div className="flex justify-between mb-1.5">
+                        <div className="flex justify-between mb-1 md:mb-1.5">
                           <span className="text-slate-300 font-medium">Centering (Left / Right)</span>
                           <span className="text-purple-400 font-bold font-mono">
                             {adjustments.x > activeBase.x ? "+" : ""}
@@ -607,7 +607,7 @@ export default function VirtualTryOnPage() {
                             step="0.001"
                             value={adjustments.x}
                             onChange={(e) => updateAdjustment("x", parseFloat(e.target.value))}
-                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                            className="flex-1 h-2 md:h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg touch-manipulation"
                           />
                           <button
                             type="button"
@@ -625,7 +625,7 @@ export default function VirtualTryOnPage() {
                     <>
                       {/* Pitch: Tilt Up / Down */}
                       <div>
-                        <div className="flex justify-between mb-1.5">
+                        <div className="flex justify-between mb-1 md:mb-1.5">
                           <span className="text-slate-300 font-medium">Tilt (Pitch)</span>
                           <span className="text-purple-400 font-bold font-mono">
                             {adjustments.rx > activeBase.rx ? "+" : ""}
@@ -640,7 +640,7 @@ export default function VirtualTryOnPage() {
                             step="0.5"
                             value={adjustments.rx}
                             onChange={(e) => updateAdjustment("rx", parseFloat(e.target.value))}
-                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                            className="flex-1 h-2 md:h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg touch-manipulation"
                           />
                           <button
                             type="button"
@@ -656,7 +656,7 @@ export default function VirtualTryOnPage() {
 
                       {/* Yaw: Turn Left / Right */}
                       <div>
-                        <div className="flex justify-between mb-1.5">
+                        <div className="flex justify-between mb-1 md:mb-1.5">
                           <span className="text-slate-300 font-medium">Turn (Yaw)</span>
                           <span className="text-purple-400 font-bold font-mono">
                             {adjustments.ry > activeBase.ry ? "+" : ""}
@@ -671,7 +671,7 @@ export default function VirtualTryOnPage() {
                             step="0.5"
                             value={adjustments.ry}
                             onChange={(e) => updateAdjustment("ry", parseFloat(e.target.value))}
-                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                            className="flex-1 h-2 md:h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg touch-manipulation"
                           />
                           <button
                             type="button"
@@ -685,7 +685,7 @@ export default function VirtualTryOnPage() {
 
                       {/* Roll: Slant Clockwise / Counter */}
                       <div>
-                        <div className="flex justify-between mb-1.5">
+                        <div className="flex justify-between mb-1 md:mb-1.5">
                           <span className="text-slate-300 font-medium">Slant (Roll)</span>
                           <span className="text-purple-400 font-bold font-mono">
                             {adjustments.rz > activeBase.rz ? "+" : ""}
@@ -700,7 +700,7 @@ export default function VirtualTryOnPage() {
                             step="0.5"
                             value={adjustments.rz}
                             onChange={(e) => updateAdjustment("rz", parseFloat(e.target.value))}
-                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                            className="flex-1 h-2 md:h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg touch-manipulation"
                           />
                           <button
                             type="button"
@@ -717,8 +717,8 @@ export default function VirtualTryOnPage() {
                   {adjustTab === "scale" && (
                     <>
                       {/* Scale: Size multiplier */}
-                      <div className="pb-3 border-b border-slate-800/80">
-                        <div className="flex justify-between mb-1.5">
+                      <div className="pb-2 md:pb-3 border-b border-slate-800/80">
+                        <div className="flex justify-between mb-1 md:mb-1.5">
                           <span className="text-slate-300 font-medium">Frame Size</span>
                           <span className="text-purple-400 font-bold font-mono">
                             {Math.round(adjustments.scale * 100)}%
@@ -732,7 +732,7 @@ export default function VirtualTryOnPage() {
                             step="0.01"
                             value={adjustments.scale}
                             onChange={(e) => updateAdjustment("scale", parseFloat(e.target.value))}
-                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                            className="flex-1 h-2 md:h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg touch-manipulation"
                           />
                           <button
                             type="button"
@@ -747,8 +747,8 @@ export default function VirtualTryOnPage() {
                       </div>
 
                       {/* Temple Length: Arm depth multiplier */}
-                      <div className="pb-3 border-b border-slate-800/80 mt-4">
-                        <div className="flex justify-between mb-1.5">
+                      <div className="pb-2 md:pb-3 border-b border-slate-800/80 mt-2.5 md:mt-4">
+                        <div className="flex justify-between mb-1 md:mb-1.5">
                           <span className="text-slate-300 font-medium">Temple Length (Arms)</span>
                           <span className="text-purple-400 font-bold font-mono">
                             {Math.round(adjustments.templeLength * 100)}%
@@ -762,7 +762,7 @@ export default function VirtualTryOnPage() {
                             step="0.01"
                             value={adjustments.templeLength}
                             onChange={(e) => updateAdjustment("templeLength", parseFloat(e.target.value))}
-                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                            className="flex-1 h-2 md:h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg touch-manipulation"
                           />
                           <button
                             type="button"
@@ -777,8 +777,8 @@ export default function VirtualTryOnPage() {
                       </div>
 
                       {/* Camera Zoom: shrinks the whole feed so the face looks smaller */}
-                      <div className="pb-3 border-b border-slate-800/80 mt-4">
-                        <div className="flex justify-between mb-1.5">
+                      <div className="pb-2 md:pb-3 border-b border-slate-800/80 mt-2.5 md:mt-4">
+                        <div className="flex justify-between mb-1 md:mb-1.5">
                           <span className="text-slate-300 font-medium">Camera Zoom</span>
                           <span className="text-purple-400 font-bold font-mono">
                             {Math.round(adjustments.zoom * 100)}%
@@ -792,7 +792,7 @@ export default function VirtualTryOnPage() {
                             step="0.01"
                             value={adjustments.zoom}
                             onChange={(e) => updateAdjustment("zoom", parseFloat(e.target.value))}
-                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                            className="flex-1 h-2 md:h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg touch-manipulation"
                           />
                           <button
                             type="button"
@@ -806,8 +806,8 @@ export default function VirtualTryOnPage() {
                       </div>
 
                       {/* Face Shape Stretch: Y-axis vertical beauty scaler */}
-                      <div className="pb-3 border-b border-slate-800/80 mt-4">
-                        <div className="flex justify-between mb-1.5">
+                      <div className="pb-2 md:pb-3 border-b border-slate-800/80 mt-2.5 md:mt-4">
+                        <div className="flex justify-between mb-1 md:mb-1.5">
                           <span className="text-slate-300 font-medium">Camera Face Stretch</span>
                           <span className="text-purple-400 font-bold font-mono">
                             {Math.round(adjustments.faceStretch * 100)}%
@@ -821,7 +821,7 @@ export default function VirtualTryOnPage() {
                             step="0.005"
                             value={adjustments.faceStretch}
                             onChange={(e) => updateAdjustment("faceStretch", parseFloat(e.target.value))}
-                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                            className="flex-1 h-2 md:h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg touch-manipulation"
                           />
                           <button
                             type="button"
@@ -836,36 +836,40 @@ export default function VirtualTryOnPage() {
                       </div>
                     </>
                   )}
-                </div>
 
-                {/* Calibration Presets — always visible regardless of active tab */}
-                <div className="shrink-0 pt-2 md:pt-3 border-t border-slate-800/60 mt-1">
-                  <h4 className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-2 tryon-section-title">Quick Presets</h4>
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {([
-                      { id: "nose-lift",  label: "Nose\nLift",    icon: "arrow_upward" },
-                      { id: "nose-lower", label: "Nose\nDrop",    icon: "arrow_downward" },
-                      { id: "wide",       label: "Wide\nFace",    icon: "open_in_full" },
-                      { id: "narrow",     label: "Narrow\nFace",  icon: "close_fullscreen" },
-                    ] as const).map(({ id, label, icon }) => {
-                      const isActive = activePreset === id;
-                      return (
-                        <button
-                          key={id}
-                          type="button"
-                          onClick={() => applyPreset(id)}
-                          className={`quick-preset-btn relative flex flex-col items-center gap-1 rounded-2xl border p-2 transition-all active:scale-95 ${
-                            isActive ? "active" : ""
-                          }`}
-                        >
-                          {isActive && (
-                            <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-purple-500 shadow-[0_0_4px_rgba(168,85,247,0.8)]" />
-                          )}
-                          <span className="material-symbols-outlined text-base leading-none preset-icon">{icon}</span>
-                          <span className="text-center text-[8px] font-bold leading-tight whitespace-pre-line preset-label">{label}</span>
-                        </button>
-                      );
-                    })}
+                  {/* Quick Presets. Inside the scroll area on purpose: as a pinned block
+                      it held 86px of the sheet permanently -- 24% of a 44dvh sheet on a
+                      phone -- even on a tab where nobody was reaching for it, and that
+                      came straight out of the space the sliders had to share.
+                      Still shown on every tab, as before. */}
+                  <div className="pt-3 border-t border-slate-800/60 mt-1">
+                    <h4 className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-2 tryon-section-title">Quick Presets</h4>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {([
+                        { id: "nose-lift",  label: "Nose\nLift",    icon: "arrow_upward" },
+                        { id: "nose-lower", label: "Nose\nDrop",    icon: "arrow_downward" },
+                        { id: "wide",       label: "Wide\nFace",    icon: "open_in_full" },
+                        { id: "narrow",     label: "Narrow\nFace",  icon: "close_fullscreen" },
+                      ] as const).map(({ id, label, icon }) => {
+                        const isActive = activePreset === id;
+                        return (
+                          <button
+                            key={id}
+                            type="button"
+                            onClick={() => applyPreset(id)}
+                            className={`quick-preset-btn relative flex flex-col items-center gap-1 rounded-2xl border p-2 transition-all active:scale-95 ${
+                              isActive ? "active" : ""
+                            }`}
+                          >
+                            {isActive && (
+                              <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-purple-500 shadow-[0_0_4px_rgba(168,85,247,0.8)]" />
+                            )}
+                            <span className="material-symbols-outlined text-base leading-none preset-icon">{icon}</span>
+                            <span className="text-center text-[8px] font-bold leading-tight whitespace-pre-line preset-label">{label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
 
