@@ -829,15 +829,39 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             const vh = video.videoHeight;
             if (cw <= 0 || ch <= 0 || vw <= 0 || vh <= 0) return;
 
-            // Cover-fit: the smallest rect with the video's aspect that fully covers the container.
             const vAsp = vw / vh;
             const cAsp = cw / ch;
             let w: number;
             let h: number;
-            if (vAsp > cAsp) { h = ch; w = ch * vAsp; }
-            else { w = cw; h = cw / vAsp; }
 
-            // zoom is clamped to >= 1 so the feed always covers — no black bars, ever.
+            // Phones FIT the whole frame; larger screens still COVER.
+            //
+            // The portrait resolution asked for in the getUserMedia constraints is only an
+            // `ideal`, and plenty of Android devices ignore it and hand back a landscape
+            // stream anyway. Cover-fitting a landscape stream into a portrait phone container
+            // throws away 50% of the width — half the camera's horizontal field of view — and
+            // magnifies what is left, which is why the face filled the screen. Fitting instead
+            // shows whatever the camera actually gave us at its natural scale, whichever way
+            // round it arrives.
+            //
+            // The cost is letterbox bars when the stream's shape differs from the panel's.
+            // They sit on the studio's own near-black background, which is a far better
+            // outcome than a face cropped to twice its size.
+            const isCompact = cw < 768;
+            if (isCompact) {
+              const fit = Math.min(cw / vw, ch / vh);
+              w = vw * fit;
+              h = vh * fit;
+            } else if (vAsp > cAsp) {
+              h = ch;
+              w = ch * vAsp;
+            } else {
+              w = cw;
+              h = cw / vAsp;
+            }
+
+            // Still clamped to >= 1: on a phone that now means "the whole frame" as the
+            // widest view, and the slider can only crop in from there.
             const zoom = Math.max(1, adjustmentsRef.current.cameraZoom ?? 1);
             const stretch = adjustmentsRef.current.faceStretch ?? 1;
             w *= zoom;
