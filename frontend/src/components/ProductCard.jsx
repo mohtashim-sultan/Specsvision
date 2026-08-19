@@ -182,7 +182,10 @@ export default function ProductCard({ product }) {
           )}
         </div>
         <div className="flex flex-wrap gap-1 mb-3">
-          {product.faceShapes?.map((shape) => (
+          {/* Capped at three. faceShapes now carries every face shape a frame genuinely
+              suits, which for a versatile category is five or six -- enough chips to wrap
+              onto a third line and leave the grid with ragged card heights. */}
+          {product.faceShapes?.slice(0, 3).map((shape) => (
             <span
               key={shape}
               className="text-xs px-2 py-1 rounded-full"
@@ -194,6 +197,14 @@ export default function ProductCard({ product }) {
               {shape}
             </span>
           ))}
+          {product.faceShapes?.length > 3 && (
+            <span
+              className="text-xs px-2 py-1 rounded-full"
+              style={{ backgroundColor: 'rgba(147,51,234,0.08)', color: 'var(--text-muted)' }}
+            >
+              +{product.faceShapes.length - 3}
+            </span>
+          )}
         </div>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
