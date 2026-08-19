@@ -70,8 +70,17 @@ const AR = {
   SEAT_DOWN: 0.03,   // seat relative to nose bridge anchor (+ = down toward nose)
   SEAT_FWD: 0.08,    // push forward off the face so lenses clear the brow (+ = toward camera)
   FWD_SIGN: 1,       // flip to -1 if the glasses render facing away from the camera
-  TEMPLE_MIN: 0.6,   // clamp range for the auto arm-length stretch
+  // Clamp range for the auto arm-length stretch. The lower bound used to be 0.6, which
+  // was BINDING on a typical model — the arm length was being set by the clamp rather
+  // than by the solve, so it only looked right by coincidence.
+  TEMPLE_MIN: 0.3,
   TEMPLE_MAX: 3.2,
+  // How far outside the skull the temple arms should sit, in world cm. Real arms rest
+  // just proud of the head rather than flush against it.
+  TEMPLE_CLEARANCE: 0.2,
+  // Cap on outward bend, as a fraction of the model's own half-width, so a bad head
+  // measurement can never splay the arms into a wishbone.
+  TEMPLE_SPLAY_MAX: 0.35,
   SMOOTH: 30,        // pose smoothing (calm, stable pose tracking)
   // cos of the maximum head turn whose landmarks are trusted for face-shape sampling.
   // 0.90 is about 25 degrees of yaw.
@@ -127,9 +136,16 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
     const lastAdjRef = useRef<any>(null);
     /** Counter of frames to bypass deadband when user moves a slider. */
     const adjChangeCountRef = useRef(0);
-    /** Temple-tip reference (group space, pre-scale): height & depth of the arm ends. */
-    const armTipYRef = useRef(0);
-    const armTipZRef = useRef(-1);
+    /**
+     * Temple-splay state. Holds each arm mesh's untouched vertex positions plus a
+     * per-vertex bend weight, so the outward bend can be re-applied from the original
+     * geometry instead of accumulating drift across updates.
+     */
+    const splayRef = useRef<{
+      parts: Array<{ attr: THREE.BufferAttribute; orig: Float32Array; ramp: Float32Array }>;
+      halfWidth: number;
+      applied: number;
+    }>({ parts: [], halfWidth: 1, applied: 0 });
     /** Real-time frameSrc ref to prevent closure race condition on initial route mount. */
     const frameSrcRef = useRef<string | null | undefined>(frameSrc);
     const loadIdRef = useRef(0);
@@ -296,30 +312,39 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             const rawSize = rawBox.getSize(new THREE.Vector3());
             const rawCenter = rawBox.getCenter(new THREE.Vector3());
 
-            // Capture the temple-tip reference (average of the back-most 20% of the
-            // model) so the animation loop can AIM the arms straight at the ears —
-            // correcting the arm's vertical angle, not just its length. Done here
-            // while matrices are still in raw model space (pre-recenter).
+            // Prepare the temple splay.
+            //
+            // A frame is scaled so its FRONT matches the face, but the arms then run straight
+            // back at that same width — and a skull is wider than a frame. On an average head
+            // the arms end up ~6mm inside the face-mesh occluder on each side, so the occluder
+            // correctly hides them and they appear to be cut off partway along. The wider the
+            // head, the earlier they vanish, which is why a broader face sees it worst.
+            //
+            // Real temples solve this by bending outward from the hinge to clear the skull, so
+            // we do the same: each vertex gets a weight that is ~0 at the frame front and rises
+            // quadratically toward the tip, which is how a beam pivoting at a hinge actually
+            // deflects. The original positions are kept so every update re-bends from the
+            // source rather than compounding.
             {
-              const backZ = rawBox.min.z + rawSize.z * 0.20;
-              const _p = new THREE.Vector3();
-              let tipYSum = 0, tipZSum = 0, tipN = 0;
+              const parts: Array<{ attr: THREE.BufferAttribute; orig: Float32Array; ramp: Float32Array }> = [];
+              const depth = rawSize.z || 1;
+              const backZ = rawBox.max.z;
+              let halfWidth = 1e-6;
               model.traverse((child) => {
-                if (child instanceof THREE.Mesh && child.geometry?.attributes?.position) {
-                  const posAttr = child.geometry.attributes.position as THREE.BufferAttribute;
-                  for (let i = 0; i < posAttr.count; i++) {
-                    _p.fromBufferAttribute(posAttr, i).applyMatrix4(child.matrixWorld);
-                    if (_p.z <= backZ) { tipYSum += _p.y; tipZSum += _p.z; tipN++; }
-                  }
+                if (!(child instanceof THREE.Mesh) || !child.geometry?.attributes?.position) return;
+                const attr = child.geometry.attributes.position as THREE.BufferAttribute;
+                const orig = new Float32Array(attr.array as ArrayLike<number>);
+                const ramp = new Float32Array(attr.count);
+                for (let i = 0; i < attr.count; i++) {
+                  // Normalised distance behind the frame front, 0 at the lens plane, 1 at the tip.
+                  const t = THREE.MathUtils.clamp((backZ - orig[i * 3 + 2]) / depth, 0, 1);
+                  ramp[i] = t * t;
+                  const ax = Math.abs(orig[i * 3]);
+                  if (ax > halfWidth) halfWidth = ax;
                 }
+                parts.push({ attr, orig, ramp });
               });
-              if (tipN > 0) {
-                armTipYRef.current = tipYSum / tipN - rawCenter.y;      // height vs. bridge
-                armTipZRef.current = tipZSum / tipN - rawBox.max.z;     // depth (negative = behind)
-              } else {
-                armTipYRef.current = 0;
-                armTipZRef.current = -rawSize.z;
-              }
+              splayRef.current = { parts, halfWidth, applied: 0 };
             }
 
             // Shift model so that:
@@ -841,8 +866,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
           const _right = new THREE.Vector3();
           const _up = new THREE.Vector3();
           const _fwd = new THREE.Vector3();
-          const _eyeMid = new THREE.Vector3();
           const _earMid = new THREE.Vector3();
+          const _tmp = new THREE.Vector3();
           const _pos = new THREE.Vector3();
           const _basis = new THREE.Matrix4();
           const _qTarget = new THREE.Quaternion();
@@ -1022,22 +1047,6 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               }
               const targetScale = lastStableScaleRef.current;
 
-              // ── Auto-stretch temple length to reach the ears ─────────────
-              const earLg = mindarInstance.anchors?.[1]?.group;
-              const earRg = mindarInstance.anchors?.[2]?.group;
-              if (earLg?.visible && earRg?.visible && rawDepthRef.current > 1e-6 && targetScale > 1e-6) {
-                earLg.getWorldPosition(_earL);
-                earRg.getWorldPosition(_earR);
-                _earMid.addVectors(_earL, _earR).multiplyScalar(0.5);
-                _eyeMid.addVectors(_eyeL, _eyeR).multiplyScalar(0.5);
-                const reach = _earMid.distanceTo(_eyeMid);          // world distance front→ear
-                const nativeArm = rawDepthRef.current * targetScale; // world arm length at scale 1×Z
-                if (nativeArm > 1e-6) {
-                  const solved = THREE.MathUtils.clamp(reach / nativeArm, AR.TEMPLE_MIN, AR.TEMPLE_MAX);
-                  templeZRef.current = THREE.MathUtils.lerp(templeZRef.current, solved, k);
-                }
-              }
-              const templeZ = templeZRef.current * adj.templeLength;
 
               // ── Position Base: Nose Bridge Landmark + EyeDist Scaled User Offsets ──
               const noseAnchor = mindarInstance.anchors?.[0]?.group;
@@ -1055,6 +1064,58 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               _pos.addScaledVector(_up, -((AR.SEAT_DOWN + shapeSeatRef.current) * eyeDist) + userY);
               _pos.addScaledVector(_fwd, AR.SEAT_FWD * eyeDist + userZ);
               _pos.addScaledVector(_right, userX);
+
+              // ── Fit the temples to the ears ──────────────────────────────
+              // The arm spans from the LENS PLANE back to the ear, and the lens plane is
+              // `_pos` — pushed forward of the nose bridge by SEAT_FWD. Measuring from the eye
+              // midpoint instead, as this did, under-asks by half: on the canonical face the
+              // true span is 7.95cm and eyeMid→earMid is only 5.18cm. The solve then produced
+              // 0.40 and was rescued by the 0.6 lower clamp, landing near the right answer by
+              // luck rather than by measurement. Projecting onto the face normal is also what
+              // the Z scale physically does, so the two now agree.
+              const earLg = mindarInstance.anchors?.[1]?.group;
+              const earRg = mindarInstance.anchors?.[2]?.group;
+              if (earLg?.visible && earRg?.visible && rawDepthRef.current > 1e-6 && targetScale > 1e-6) {
+                earLg.getWorldPosition(_earL);
+                earRg.getWorldPosition(_earR);
+                _earMid.addVectors(_earL, _earR).multiplyScalar(0.5);
+
+                const reach = _tmp.subVectors(_pos, _earMid).dot(_fwd);
+                const nativeArm = rawDepthRef.current * targetScale;
+                if (nativeArm > 1e-6 && reach > 0) {
+                  const solved = THREE.MathUtils.clamp(reach / nativeArm, AR.TEMPLE_MIN, AR.TEMPLE_MAX);
+                  templeZRef.current = THREE.MathUtils.lerp(templeZRef.current, solved, k);
+                }
+
+                // ── Bend the arms outward to clear the skull ───────────────
+                // Driven by the measured ear-to-ear width, so a broad head gets more bend and
+                // a narrow one gets none — which is the whole point: the same frame has to sit
+                // correctly on both.
+                const splay = splayRef.current;
+                if (splay.parts.length > 0 && targetScale > 1e-6) {
+                  const headHalf = _earL.distanceTo(_earR) * 0.5 + AR.TEMPLE_CLEARANCE;
+                  const armHalf = splay.halfWidth * targetScale;
+                  const wantedModel = THREE.MathUtils.clamp(
+                    (headHalf - armHalf) / targetScale,
+                    0,
+                    splay.halfWidth * AR.TEMPLE_SPLAY_MAX,
+                  );
+                  // Rewriting 30k vertices is cheap but not free, and the required bend barely
+                  // moves once a face is tracked. Only rebuild on a change worth seeing.
+                  if (Math.abs(wantedModel - splay.applied) > splay.halfWidth * 0.01) {
+                    splay.applied = wantedModel;
+                    for (const part of splay.parts) {
+                      const arr = part.attr.array as Float32Array;
+                      for (let i = 0; i < part.attr.count; i++) {
+                        const x = part.orig[i * 3];
+                        arr[i * 3] = x + Math.sign(x) * wantedModel * part.ramp[i];
+                      }
+                      part.attr.needsUpdate = true;
+                    }
+                  }
+                }
+              }
+              const templeZ = templeZRef.current * adj.templeLength;
 
               // ── 2. Positional & Rotational Deadband + Adaptive Lerp ────────
               const posDelta = glasses.position.distanceTo(_pos);
