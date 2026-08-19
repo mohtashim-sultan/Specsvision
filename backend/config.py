@@ -42,10 +42,9 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 5 * 1024 * 1024  # 5 MB — images
     max_model_upload_bytes: int = 32 * 1024 * 1024  # 32 MB — .glb / .gltf
 
-    # Email (Resend API) — used for OTP verification and order confirmation.
+    # Email (Resend API) — used for order confirmation.
     resend_api_key: str = ""
     email_from: str = "SpecsVision <onboarding@resend.dev>"
-    otp_expire_minutes: int = 10
 
     # Stripe — test keys go here; swap for live keys in production.
     stripe_secret_key: str = ""

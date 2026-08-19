@@ -109,8 +109,16 @@ export const AuthProvider = ({ children }) => {
 
   const register = useCallback(async (userData) => {
     const { email, password, name } = userData;
-    return await signupRequest(email, password, name || null);
-  }, []);
+    // signupRequest stores the token, so the session has to be hydrated here exactly as
+    // login does it — otherwise the user holds a valid token while the app still thinks
+    // nobody is signed in.
+    await signupRequest(email, password, name || null);
+    const me = await fetchCurrentUser();
+    setUser(me);
+    setAdmin(null);
+    await refreshCart();
+    return 'user';
+  }, [refreshCart]);
 
   const logout = useCallback(() => {
     logoutClient();

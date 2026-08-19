@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from config import settings
 from deps import get_current_admin, get_current_user, get_current_user_optional, get_db
-from email_service import send_otp_email, send_order_confirmation_email
+from email_service import send_order_confirmation_email
 from models import Admin, CartItem, Order, OrderItem, Product, Review, User, WishlistItem
 from order_status import VALID_ORDER_STATUSES, can_transition
 from rate_limit import enforce_login_rate_limit
@@ -39,20 +39,17 @@ from schemas import (
     OrderItemOut,
     OrderOut,
     ProductOut,
-    ResendOtpRequest,
     ReviewCreate,
     ReviewListOut,
     ReviewOut,
     ReviewSummary,
     SalesPoint,
-    SignupResponse,
     TokenWithRole,
     TopProduct,
     UserCreate,
     UserLogin,
     UserOut,
     UserUpdate,
-    VerifyEmailRequest,
     WishlistItemCreate,
     WishlistItemOut,
     WishlistOut,
@@ -289,84 +286,39 @@ admin_users_router = APIRouter()
 admin_analytics_router = APIRouter()
 
 
-@auth_router.post("/signup", response_model=SignupResponse, status_code=status.HTTP_201_CREATED)
-def signup(body: UserCreate, db: Session = Depends(get_db)) -> SignupResponse:
+@auth_router.post("/signup", response_model=TokenWithRole, status_code=status.HTTP_201_CREATED)
+def signup(body: UserCreate, db: Session = Depends(get_db)) -> TokenWithRole:
+    """Create an account and sign the user straight in.
+
+    Email verification was removed, so there is no longer an intermediate step that
+    hands back the token. Signup issues it directly, which is what /verify-email used
+    to do once the code checked out.
+    """
     email = body.email.lower()
     if db.scalar(select(Admin).where(Admin.email == email)):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="This email is used by an administrator account.",
         )
-    existing = db.scalar(select(User).where(User.email == email))
-    if existing and existing.is_verified:
+    # Previously an unverified account could be re-registered, because it had no usable
+    # credentials until the code was entered. Now every account is usable the moment it
+    # exists, so a second signup on the same address is simply a duplicate.
+    if db.scalar(select(User).where(User.email == email)):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
-
-    # Generate a fresh 6-digit OTP.
-    otp = f"{random.randint(0, 999999):06d}"
-    otp_hash = hash_password(otp)
-    expires = datetime.now(timezone.utc) + timedelta(minutes=settings.otp_expire_minutes)
-
-    if existing:
-        # Resend to an unverified account — refresh OTP without creating a duplicate.
-        existing.otp_code = otp_hash
-        existing.otp_expires_at = expires
-        existing.full_name = body.full_name
-        db.commit()
-        db.refresh(existing)
-        send_otp_email(email, body.full_name or email.split("@")[0], otp)
-        return SignupResponse(message="Verification code sent. Check your email.", email=email)
 
     user = User(
         email=email,
         hashed_password=hash_password(body.password),
         full_name=body.full_name,
-        is_verified=False,
-        otp_code=otp_hash,
-        otp_expires_at=expires,
+        # The column is retained but no longer gates anything; True keeps it honest for
+        # any future reader rather than leaving every row looking unverified.
+        is_verified=True,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
-    send_otp_email(email, body.full_name or email.split("@")[0], otp)
-    return SignupResponse(message="Verification code sent. Check your email.", email=email)
-
-
-@auth_router.post("/verify-email", response_model=TokenWithRole)
-def verify_email(body: VerifyEmailRequest, db: Session = Depends(get_db)) -> TokenWithRole:
-    email = body.email.lower()
-    user = db.scalar(select(User).where(User.email == email))
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found.")
-    if user.is_verified:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already verified.")
-    if user.otp_code is None or user.otp_expires_at is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No pending verification. Request a new code.")
-    expires_at = user.otp_expires_at if user.otp_expires_at.tzinfo else user.otp_expires_at.replace(tzinfo=timezone.utc)
-    if datetime.now(timezone.utc) > expires_at:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Verification code expired. Request a new one.")
-    if not verify_password(body.otp, user.otp_code):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code.")
-
-    user.is_verified = True
-    user.otp_code = None
-    user.otp_expires_at = None
-    db.commit()
     token = create_access_token(user.id, role="user", token_version=user.token_version)
     return TokenWithRole(access_token=token, role="user")
-
-
-@auth_router.post("/resend-otp", status_code=status.HTTP_204_NO_CONTENT)
-def resend_otp(body: ResendOtpRequest, db: Session = Depends(get_db)) -> None:
-    email = body.email.lower()
-    user = db.scalar(select(User).where(User.email == email))
-    if user is None or user.is_verified:
-        # Silently succeed to avoid user enumeration.
-        return
-    otp = f"{random.randint(0, 999999):06d}"
-    user.otp_code = hash_password(otp)
-    user.otp_expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.otp_expire_minutes)
-    db.commit()
-    send_otp_email(email, user.full_name or email.split("@")[0], otp)
 
 
 @auth_router.post("/login", response_model=TokenWithRole)
@@ -388,11 +340,9 @@ def login(body: UserLogin, request: Request, db: Session = Depends(get_db)) -> T
         token = create_access_token(admin.id, role="admin", token_version=admin.token_version)
         return TokenWithRole(access_token=token, role="admin")
     assert user is not None
-    if not user.is_verified:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Please verify your email before logging in.",
-        )
+    # No verification gate. Accounts created before this change may still carry
+    # is_verified = false; keeping the check would lock them out permanently, since the
+    # endpoint that could clear it no longer exists.
     if not verify_password(body.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password.")
     token = create_access_token(user.id, role="user", token_version=user.token_version)
