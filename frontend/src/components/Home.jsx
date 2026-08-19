@@ -1,19 +1,56 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Sparkles, ArrowRight, Play, Eye, ShieldCheck, Globe } from 'lucide-react';
+import { Sparkles, ArrowRight, Play, Glasses, ScanFace, Shapes, RotateCcw, Box } from 'lucide-react';
 import ProductCard from './ProductCard';
-import { motion } from 'framer-motion';
+import ModelViewer from './ModelViewer';
+import { motion, AnimatePresence, useInView } from 'framer-motion';
 import { fetchProducts } from '../api/productsApi';
 import { displayImageUrl, displayBadge, displayFaceShapes } from '../utils/storefrontProduct';
+import { SHAPE_GUIDE } from './ar/faceShape';
+import { API_BASE } from '../config/env';
 
-const stats = [
-  { icon: Eye, value: '1M+', label: 'Virtual Try-Ons' },
-  { icon: ShieldCheck, value: '95%', label: 'Fit Accuracy' },
-  { icon: Globe, value: '40+', label: 'Countries' },
-];
+/** MediaPipe FaceMesh topology size — the landmark count the try-on actually tracks. */
+const FACE_LANDMARK_COUNT = 468;
+
+/** Seconds each frame holds in the hero before advancing. */
+const HERO_ROTATE_MS = 4000;
+
+/**
+ * Counts from 0 to `value` once scrolled into view.
+ *
+ * Static numbers on a landing page read as decoration; a number that moves reads as
+ * something being measured. It runs once — re-triggering on every scroll past is the
+ * kind of motion that gets tiring rather than impressive.
+ */
+function Counter({ value, className, style }) {
+  const ref = useRef(null);
+  const inView = useInView(ref, { once: true, margin: '-60px' });
+  const [shown, setShown] = useState(0);
+
+  useEffect(() => {
+    if (!inView) return undefined;
+    const duration = 900;
+    const start = performance.now();
+    let raf;
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / duration);
+      // ease-out cubic: fast to begin, settling onto the final number
+      setShown(Math.round(value * (1 - Math.pow(1 - t, 3))));
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [inView, value]);
+
+  return <p ref={ref} className={className} style={style}>{shown}</p>;
+}
 
 export default function Home() {
   const [products, setProducts] = useState([]);
+  const [totalFrames, setTotalFrames] = useState(0);
+  // Which frame the hero is showing, and whether it has been switched to live 3D.
+  const [heroIdx, setHeroIdx] = useState(0);
+  const [show3D, setShow3D] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -29,13 +66,41 @@ export default function Home() {
           reviews: 120 + p.id * 17,
           originalPrice: p.id % 3 === 0 ? Math.round(Number(p.price) * 1.25 * 100) / 100 : null,
         }));
-        if (!cancelled) setProducts(mapped.slice(0, 4));
+        if (!cancelled) {
+          setProducts(mapped.slice(0, 4));
+          setTotalFrames(list.length);
+        }
       } catch (err) {
         console.error("Failed to load featured products:", err);
       }
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // Advance the hero frame on a timer, but stop once the viewer is in 3D — pulling the
+  // model out from under someone who is dragging it would be hostile.
+  useEffect(() => {
+    if (show3D || products.length < 2) return undefined;
+    const id = setInterval(() => setHeroIdx((i) => (i + 1) % products.length), HERO_ROTATE_MS);
+    return () => clearInterval(id);
+  }, [show3D, products.length]);
+
+  const hero = products[heroIdx] || null;
+  const heroModelSrc = (() => {
+    const path = hero?.front_view?.trim();
+    if (!path) return null;
+    return path.startsWith('/') ? `${API_BASE}${path}` : path;
+  })();
+
+  // Every number here is real and checkable. The previous set (1M+ try-ons, 40+
+  // countries) was invented, and invented traffic numbers are a claim to a customer,
+  // not decoration. The catalogue count is live from the API; the other two are
+  // properties of the tracker itself.
+  const stats = [
+    { icon: Glasses, value: totalFrames, label: 'Frames to try on' },
+    { icon: ScanFace, value: FACE_LANDMARK_COUNT, label: 'Face points tracked' },
+    { icon: Shapes, value: Object.keys(SHAPE_GUIDE).length, label: 'Face shapes matched' },
+  ];
 
   return (
     <main>
@@ -124,7 +189,15 @@ export default function Home() {
               </div>
             </motion.div>
 
-            {/* Image */}
+            {/* Hero media.
+                This used to be a still photograph, on a site whose entire proposition is a
+                live 3D try-on. It now shows real frames from the catalogue, cycling on a
+                timer, and swaps to the actual 3D model on demand.
+
+                On demand rather than on load, deliberately: the models are 6-11MB each, so
+                auto-loading one here would cost the landing page its first paint and a
+                chunk of someone's mobile data before they have asked for anything. The
+                product image carries the motion; the geometry arrives when it is wanted. */}
             <motion.div
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
@@ -132,20 +205,89 @@ export default function Home() {
               className="relative order-1 lg:order-2"
             >
               <div
-                className="relative rounded-2xl sm:rounded-3xl p-1 sm:p-1.5 transform rotate-0 sm:rotate-1 md:rotate-2 hover:rotate-0 transition-transform duration-500"
+                className="relative rounded-2xl sm:rounded-3xl p-1 sm:p-1.5"
                 style={{
                   background: 'linear-gradient(135deg, rgba(147,51,234,0.3), rgba(236,72,153,0.3))',
                   boxShadow: '0 20px 60px rgba(147,51,234,0.15)',
                 }}
               >
-                <div className="rounded-xl sm:rounded-2xl overflow-hidden" style={{ backgroundColor: 'var(--surface-bg)' }}>
-                  <img
-                    src="/specs.jpg"
-                    alt="Virtual Try-On Demo"
-                    className="w-full rounded-xl sm:rounded-2xl"
-                  />
+                <div
+                  className="relative overflow-hidden rounded-xl sm:rounded-2xl"
+                  style={{ backgroundColor: 'var(--surface-bg)', aspectRatio: '4 / 3' }}
+                >
+                  {show3D && heroModelSrc ? (
+                    <ModelViewer
+                      src={heroModelSrc}
+                      alt={hero?.name || 'Frame'}
+                      poster={hero?.image}
+                      minHeight="100%"
+                      className="h-full w-full"
+                      showArButton={false}
+                      showHint={false}
+                      autoRotate
+                      cameraControls
+                    />
+                  ) : (
+                    <AnimatePresence mode="wait">
+                      <motion.img
+                        key={hero?.id ?? 'fallback'}
+                        src={hero?.image || '/specs.jpg'}
+                        alt={hero?.name || 'Virtual Try-On Demo'}
+                        initial={{ opacity: 0, scale: 1.04 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.98 }}
+                        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+                        className="absolute inset-0 h-full w-full object-cover"
+                      />
+                    </AnimatePresence>
+                  )}
+
+                  {/* Name plate + the control that pulls in the real geometry. */}
+                  {hero && (
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 bg-gradient-to-t from-black/65 to-transparent p-3 sm:p-4">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-white sm:text-base">{hero.name}</p>
+                        {hero.category && (
+                          <p className="truncate text-[11px] text-white/70">{hero.category}</p>
+                        )}
+                      </div>
+                      {heroModelSrc && (
+                        <button
+                          type="button"
+                          onClick={() => setShow3D((v) => !v)}
+                          className="pointer-events-auto flex shrink-0 items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur-md ring-1 ring-white/25 transition hover:bg-white/25 active:scale-95"
+                        >
+                          {show3D
+                            ? <><RotateCcw className="h-3.5 w-3.5" /> Photo</>
+                            : <><Box className="h-3.5 w-3.5" /> View in 3D</>}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
+
+              {/* Frame picker. Doubles as the progress indicator for the auto-rotation. */}
+              {products.length > 1 && (
+                <div className="mt-3 flex justify-center gap-2 sm:mt-4">
+                  {products.map((p, i) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => { setHeroIdx(i); setShow3D(false); }}
+                      aria-label={`Show ${p.name}`}
+                      aria-current={i === heroIdx}
+                      className="h-14 w-14 overflow-hidden rounded-xl transition sm:h-16 sm:w-16"
+                      style={{
+                        border: i === heroIdx ? '2px solid rgb(147,51,234)' : '2px solid var(--border-color)',
+                        opacity: i === heroIdx ? 1 : 0.55,
+                      }}
+                    >
+                      <img src={p.image} alt="" className="h-full w-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              )}
             </motion.div>
           </div>
         </div>
@@ -166,7 +308,11 @@ export default function Home() {
                 <div className="inline-flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-xl mb-2 sm:mb-3" style={{ background: 'rgba(147,51,234,0.08)' }}>
                   <Icon className="w-5 h-5 sm:w-6 sm:h-6" style={{ color: 'var(--text-accent)' }} />
                 </div>
-                <p className="text-xl sm:text-2xl md:text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>{value}</p>
+                <Counter
+                  value={value}
+                  className="text-xl sm:text-2xl md:text-3xl font-bold"
+                  style={{ color: 'var(--text-primary)' }}
+                />
                 <p className="text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>{label}</p>
               </motion.div>
             ))}
