@@ -80,6 +80,18 @@ const AR = {
   // ~1.5 would also clear thick hair, at the cost of arms floating on a short-haired user
   // — there is no hair geometry to measure, so it is one constant either way.
   TEMPLE_CLEARANCE: 0.6,
+  // Strength of the outward flare, 0 = off.
+  //
+  // It is off. The flare existed to keep the arms out of the face-mesh occluder, but that
+  // was only necessary because the occluder was inflating at the silhouette (its polygon
+  // offset had the wrong sign, see addFaceMesh below). With that fixed, the occluder cuts
+  // exactly at the skin, and an undeformed arm at its natural width shows for roughly the
+  // first 60% of its length before the widening skull swallows it -- which is what a real
+  // pair does, and what every reference try-on shows. Bending the product to avoid a bug
+  // in the occluder made frames look broken for the sake of a problem that no longer
+  // exists. Left as a tunable because a head far wider than the frame is the one case
+  // where some flare would still help.
+  TEMPLE_SPLAY_STRENGTH: 0,
   // Cap on outward bend, as a fraction of the model's own half-width, so a bad head
   // measurement can never splay the arms into a wishbone.
   TEMPLE_SPLAY_MAX: 0.45,
@@ -98,7 +110,13 @@ const AR = {
   TEMPLE_AIM_MAX: 0.5,
   // Arms are solved to reach the ear, then extended by this factor so they carry past it
   // and hook down behind, as real temples do, instead of stopping level with it.
-  TEMPLE_REACH_K: 1.15,
+  //
+  // Capped at 1.05 rather than more: MindAR's face mesh ends at the ears, so there is no
+  // occluder behind them. An arm extended much further re-emerges past the mesh as a
+  // floating fragment behind the head, disconnected from the part the skull is hiding.
+  // With the flare off the arm is hidden from ~60% of its length anyway, so apparent
+  // length now comes from occluding it correctly rather than from stretching it.
+  TEMPLE_REACH_K: 1.05,
   SMOOTH: 30,        // pose smoothing (calm, stable pose tracking)
   // cos of the maximum head turn whose landmarks are trusted for face-shape sampling.
   // 0.90 is about 25 degrees of yaw.
@@ -1236,10 +1254,15 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                     headHalf = Math.max(headHalf, _cheekL.distanceTo(_cheekR) * 0.5);
                   }
 
-                  const targetHalf = Math.min(
-                    (headHalf + AR.TEMPLE_CLEARANCE) / targetScale,
-                    splay.halfWidth * (1 + AR.TEMPLE_SPLAY_MAX),
-                  );
+                  // Zeroing the target rather than the push keeps the deadband below stable,
+                  // so a disabled flare never triggers a vertex rewrite at all.
+                  const targetHalf =
+                    AR.TEMPLE_SPLAY_STRENGTH > 0
+                      ? Math.min(
+                          (headHalf + AR.TEMPLE_CLEARANCE) / targetScale,
+                          splay.halfWidth * (1 + AR.TEMPLE_SPLAY_MAX),
+                        )
+                      : 0;
 
                   // Where the ear sits vertically relative to the frame, in model units.
                   const earUp = _tmp.subVectors(_earMid, _pos).dot(_up) - AR.TEMPLE_EAR_DROP;
@@ -1264,7 +1287,11 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                       for (let i = 0; i < part.attr.count; i++) {
                         const w = part.w[i];
                         const x = part.rootX[i];
-                        const px = Math.sign(x) * Math.max(0, targetHalf - Math.abs(x)) * w;
+                        const px =
+                          Math.sign(x) *
+                          Math.max(0, targetHalf - Math.abs(x)) *
+                          w *
+                          AR.TEMPLE_SPLAY_STRENGTH;
                         const py = wantTipY * w;
                         arr[i * 3] = part.orig[i * 3] + part.dirX.x * px + part.dirY.x * py;
                         arr[i * 3 + 1] = part.orig[i * 3 + 1] + part.dirX.y * px + part.dirY.y * py;
