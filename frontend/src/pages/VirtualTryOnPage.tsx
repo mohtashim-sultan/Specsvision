@@ -33,12 +33,12 @@ interface Adjustments {
 // to 0.82, which shrank the composited feed and left black bars on every screen — worst on
 // phones, where it pushed the face into a small box. faceStretch 1.0 keeps the feed
 // undistorted; both remain user-adjustable.
-const BASELINE: Adjustments = { scale: 0.87, templeLength: 1.0, faceStretch: 1.0, zoom: 1.0, x: 0.0, y: 0.0, z: 0.0, rx: 0.0, ry: 0.0, rz: 0.0 };
+const BASELINE: Adjustments = { scale: 0.82, templeLength: 1.0, faceStretch: 1.0, zoom: 1.0, x: 0.0, y: 0.0, z: 0.0, rx: 0.0, ry: 0.0, rz: 0.0 };
 const DEFAULT_ADJUSTMENTS: Record<string, Adjustments> = {
   default:  { ...BASELINE },
   wayfarer: { ...BASELINE },
-  aviator:  { ...BASELINE, scale: 1.02 },
-  cateye:   { ...BASELINE, scale: 0.98 },
+  aviator:  { ...BASELINE, scale: 0.97 },
+  cateye:   { ...BASELINE, scale: 0.93 },
   round:    { ...BASELINE },
   oval:     { ...BASELINE },
 };
@@ -121,7 +121,7 @@ export default function VirtualTryOnPage() {
   useEffect(() => {
     if (selectedId === null) return;
     const getInitialAdjustments = (): Adjustments => {
-      const saved = localStorage.getItem(`specsvision_adj_v14_${selectedId}`);
+      const saved = localStorage.getItem(`specsvision_adj_v15_${selectedId}`);
       if (saved) {
         try {
           return JSON.parse(saved);
@@ -203,7 +203,7 @@ export default function VirtualTryOnPage() {
     setAdjustments((prev) => {
       const next = { ...prev, [key]: value };
       if (selectedId !== null) {
-        localStorage.setItem(`specsvision_adj_v14_${selectedId}`, JSON.stringify(next));
+        localStorage.setItem(`specsvision_adj_v15_${selectedId}`, JSON.stringify(next));
       }
       return next;
     });
@@ -241,7 +241,7 @@ export default function VirtualTryOnPage() {
     setAdjustments(next);
     setActivePreset(presetType);
     if (selectedId !== null) {
-      localStorage.setItem(`specsvision_adj_v14_${selectedId}`, JSON.stringify(next));
+      localStorage.setItem(`specsvision_adj_v15_${selectedId}`, JSON.stringify(next));
     }
     toast.success(`Preset "${presetType}" applied!`);
   };
@@ -253,7 +253,7 @@ export default function VirtualTryOnPage() {
     setAdjustments(next);
     setActivePreset(null);
     if (selectedId !== null) {
-      localStorage.removeItem(`specsvision_adj_v14_${selectedId}`);
+      localStorage.removeItem(`specsvision_adj_v15_${selectedId}`);
     }
     toast.success("Adjustments reset to defaults!");
   };

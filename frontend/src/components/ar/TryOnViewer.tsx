@@ -60,7 +60,7 @@ const CAMERA_FILTER = "contrast(1.08) saturate(1.14) brightness(1.03)";
 // tilt. These constants are the knobs to dial from screenshots — all are fractions of the
 // inter-eye-corner distance (so they're distance-invariant) unless noted.
 const AR = {
-  SCALE_K: 2.15,     // frame width ÷ eye-corner distance (bigger = larger glasses)
+  SCALE_K: 1.95,     // frame width ÷ eye-corner distance (bigger = larger glasses)
   SEAT_DOWN: 0.03,   // seat relative to nose bridge anchor (+ = down toward nose)
   SEAT_FWD: 0.08,    // push forward off the face so lenses clear the brow (+ = toward camera)
   FWD_SIGN: 1,       // flip to -1 if the glasses render facing away from the camera
@@ -711,8 +711,10 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
           // (portrait on phones) at a modest resolution — this both fills the screen properly
           // and roughly halves per-frame tracking cost.
           const portrait = container.clientHeight >= container.clientWidth;
-          const idealLong = 960;
-          const idealShort = 720;
+          // Higher resolution = wider sensor crop area = face naturally smaller in frame
+          // on Android selfie cameras, which alleviates the "face too big" problem.
+          const idealLong = 1280;
+          const idealShort = 960;
           const nativeGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
           navigator.mediaDevices.getUserMedia = async (constraints: MediaStreamConstraints) => {
             if (!constraints?.video || typeof constraints.video !== "object") {
@@ -726,9 +728,14 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                 ...constraints,
                 video: {
                   ...constraints.video,
+                  facingMode: "user",
                   width: { ideal: portrait ? idealShort : idealLong },
                   height: { ideal: portrait ? idealLong : idealShort },
                   frameRate: { ideal: 30 },
+                  // Request minimum hardware zoom on Android (zoom:1 = widest FOV).
+                  // This is an "advanced" constraint — browsers that don't support it
+                  // silently ignore it, so there's no risk of a request failure.
+                  advanced: [{ zoom: 1 } as any],
                 },
               });
             } catch (e) {
@@ -939,7 +946,9 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                 if (cheekWidth > 1e-6 && eyeDist > 1e-6) {
                   const rawRatio = cheekWidth / eyeDist;
                   const rawMult = rawRatio / REFERENCE_FACE_RATIO;
-                  const targetMult = THREE.MathUtils.clamp(rawMult, 0.80, 1.30);
+                  // Wider clamp (0.75–1.40 vs previous 0.80–1.30) gives more headroom
+                  // to auto-adapt across the wide variety of Android selfie camera FOVs.
+                  const targetMult = THREE.MathUtils.clamp(rawMult, 0.75, 1.40);
                   // Smooth slowly (k * 0.10) so scale changes are rock-solid without shimmer
                   faceSizeMultRef.current = THREE.MathUtils.lerp(faceSizeMultRef.current, targetMult, k * 0.10);
                   faceSizeMultiplier = faceSizeMultRef.current;
