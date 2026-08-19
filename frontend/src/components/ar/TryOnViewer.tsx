@@ -374,7 +374,15 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
 
             // Compute the bounding box of the raw model
             model.updateMatrixWorld(true);
-            const rawBox = new THREE.Box3().setFromObject(model);
+            // precise=true walks the actual vertices. The default transforms each geometry's
+            // LOCAL axis-aligned box and unions the results, which for a mesh sitting on a
+            // ROTATED node is bigger than the true bounds and lopsided about the centre. The
+            // catalogue has both kinds: a model whose node transforms are axis-aligned measures
+            // identically either way, while one exported with rotations came out 7.7% too wide,
+            // 14.9% too deep, and with its centre 1.0 units off - which lands as a frame sitting
+            // 5.5mm to one side of the nose and rendering 7.7% small, because every downstream
+            // number (centring, scale, the temple depth solve) is derived from this box.
+            const rawBox = new THREE.Box3().setFromObject(model, true);
             const rawSize = rawBox.getSize(new THREE.Vector3());
             const rawCenter = rawBox.getCenter(new THREE.Vector3());
 
