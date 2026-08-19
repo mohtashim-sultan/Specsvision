@@ -9,7 +9,13 @@ import React, {
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment";
-import { FACE_SHAPE_LANDMARKS, classifyFaceShape, type FaceShape } from "./faceShape";
+import {
+  FACE_SHAPE_LANDMARKS,
+  FaceShapeStabilizer,
+  SHAPE_FIT,
+  faceRatios,
+  type FaceShape,
+} from "./faceShape";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -67,6 +73,12 @@ const AR = {
   TEMPLE_MIN: 0.6,   // clamp range for the auto arm-length stretch
   TEMPLE_MAX: 3.2,
   SMOOTH: 30,        // pose smoothing (calm, stable pose tracking)
+  // cos of the maximum head turn whose landmarks are trusted for face-shape sampling.
+  // 0.90 is about 25 degrees of yaw.
+  SHAPE_MIN_FRONTALITY: 0.90,
+  // Frames without a face after which the face-shape lock is released, on the assumption
+  // that whoever comes back may be someone else. ~4s at 30fps.
+  SHAPE_RELEASE_FRAMES: 120,
 };
 
 // Landmark indices used to build the head-pose basis (MediaPipe FaceMesh 468 topology).
@@ -101,16 +113,12 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
     const rawDepthRef = useRef(0);
     /** Native width (X size) of the loaded frame — used to scale frame width to the eyes. */
     const rawWidthRef = useRef(1);
-    /** Measured Y/X aspect ratio of the 3D model geometry. */
-    const rawAspectRef = useRef(0.38);
     /** Read-only landmark anchors (eyes/forehead/chin) that drive the head-pose basis. */
     const poseAnchorsRef = useRef<Record<string, any> | null>(null);
     /** Smoothed temple-length Z multiplier held across frames. */
     const templeZRef = useRef(1.0);
     /** Smoothed face-size multiplier: corrects glasses scale for individual face widths. */
     const faceSizeMultRef = useRef(1.0);
-    /** Smoothed yaw scale compensation multiplier. */
-    const yawCompRef = useRef(1.0);
     /** Ref tracking whether face pose was active in the previous frame (for instant snap). */
     const wasTrackingRef = useRef(false);
     /** Stable scale threshold reference to eliminate 1-pixel scale shimmer. */
@@ -139,9 +147,14 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
     // Face-shape detection: extra read-only landmark anchors + a stabilization buffer so we
     // only surface a shape once it's held steady across many frames (avoids flicker).
     const shapeAnchorsRef = useRef<Record<string, any> | null>(null);
-    const shapeSamplesRef = useRef<FaceShape[]>([]);
-    const lastShapeRef = useRef<string | null>(null);
+    const shapeStabilizerRef = useRef(new FaceShapeStabilizer());
+    const lastShapeRef = useRef<FaceShape | null>(null);
     const shapeFrameRef = useRef(0);
+    /** Smoothed per-shape fit refinement, lerped in so a first lock isn't a visible jump. */
+    const shapeWidthRef = useRef(1);
+    const shapeSeatRef = useRef(0);
+    /** Consecutive frames without a face — a long gap means a different person may be next. */
+    const lostFramesRef = useRef(0);
 
     // Current smoothed values (for lerping user-adjustment changes only).
     // These are NOT used to smooth face-tracking — tracking is instant.
@@ -325,8 +338,6 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             // depth (arm length) to reach the ears.
             rawWidthRef.current = rawSize.x || 1;
             rawDepthRef.current = rawSize.z;
-            const measuredAspect = (rawSize.y > 0 && rawSize.x > 0) ? (rawSize.y / rawSize.x) : 0.38;
-            rawAspectRef.current = measuredAspect;
 
             // Apply initial transforms from current adjustments
             const adj = adjustmentsRef.current;
@@ -840,9 +851,20 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
 
           // Sample the shape landmarks every few frames, classify, and continuously emit
           // the current best shape so the UI stays live — not just on first detection.
-          const sampleFaceShape = () => {
+          /**
+           * Sample the face proportions and feed the stabiliser.
+           *
+           * Only near-frontal frames are used. The ratios themselves are rotation-invariant
+           * (they come from 3D metric landmarks), but MediaPipe's landmark ACCURACY falls off
+           * sharply once a face turns, and the silhouette points this reads — cheek, jaw, brow —
+           * are exactly the ones that degrade first. Feeding those in is how a stable measure
+           * gets polluted by geometry that was never in question.
+           */
+          const sampleFaceShape = (frontality: number) => {
             const sa = shapeAnchorsRef.current;
             if (!onFaceShapeDetect || !sa) return;
+            if (frontality < AR.SHAPE_MIN_FRONTALITY) return;
+
             const pts: Record<string, { x: number; y: number; z: number }> = {};
             for (const key of Object.keys(FACE_SHAPE_LANDMARKS)) {
               const g = sa[key]?.group;
@@ -850,27 +872,14 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               g.getWorldPosition(_shapeVec);
               pts[key] = { x: _shapeVec.x, y: _shapeVec.y, z: _shapeVec.z };
             }
-            const shape = classifyFaceShape(pts as any);
-            if (!shape) return;
-            const buf = shapeSamplesRef.current;
-            buf.push(shape);
-            // Smaller rolling window (20) → faster initial lock (~0.6 s at 30 fps × 3rd-frame sampling).
-            if (buf.length > 20) buf.shift();
-            // Start deciding once we have 10 samples (was 20) so the card appears quickly.
-            if (buf.length < 10) return;
-            const counts = new Map<string, number>();
-            let best: string | null = null;
-            let bestN = 0;
-            for (const s of buf) {
-              const n = (counts.get(s) ?? 0) + 1;
-              counts.set(s, n);
-              if (n > bestN) { bestN = n; best = s; }
-            }
-            // Emit whenever a stable majority is found — no change-only gate — so the
-            // shape card updates live as the face angle or expression shifts.
-            if (best && bestN / buf.length >= 0.55) {
-              lastShapeRef.current = best;
-              onFaceShapeDetect(best as FaceShape);
+
+            const r = faceRatios(pts as any);
+            if (!r) return;
+
+            const shape = shapeStabilizerRef.current.add(r);
+            if (shape && shape !== lastShapeRef.current) {
+              lastShapeRef.current = shape;
+              onFaceShapeDetect(shape);
             }
           };
 
@@ -883,14 +892,7 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
           // frame-rate independent, allowing butter-smooth updates on both
           // standard 30-60Hz mobile screens and premium 90-120Hz displays.
           renderer.setAnimationLoop(() => {
-            const anchor = mindarInstance.anchors?.[0];
             const glasses = glassesRef.current;
-
-            // Face-shape sampling runs every 3rd frame (was every 6th) for faster live updates.
-            if (anchor?.group?.visible) {
-              shapeFrameRef.current++;
-              if (shapeFrameRef.current % 3 === 0) sampleFaceShape();
-            }
 
             const pose = poseAnchorsRef.current;
             const eyeLg = pose?.eyeL?.group;
@@ -928,12 +930,16 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               _qTarget.multiply(_qUser);
 
               const eyeDist = _eyeL.distanceTo(_eyeR);
+              lostFramesRef.current = 0;
 
               // ── Face Size Auto-Fit ───────────────────────────────────────
               // Cheek landmarks 234/454 are registered as shape anchors ("cheekL"/"cheekR").
               // We measure real cheekbone width in world space vs eye separation to auto-adapt
               // glasses size for wider or narrower faces.
-              const REFERENCE_FACE_RATIO = 1.65; // avg cheekWidth / eyeDist
+              // Measured off MindAR's canonical-face-model.obj: |234-454| / |33-263|
+              // = 15.328cm / 8.892cm. At 1.65 an average face resolved to a multiplier of
+              // 1.045 rather than 1.0 — a standing +4.5% oversize on every user.
+              const REFERENCE_FACE_RATIO = 1.7239; // canonical cheekWidth / eyeDist
               const sa = shapeAnchorsRef.current;
               const cheekLg = sa?.cheekL?.group;
               const cheekRg = sa?.cheekR?.group;
@@ -955,13 +961,23 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                 }
               }
 
-              // ── Yaw-Aware Scale Compensation ─────────────────────────────
-              // Compensates perspective foreshortening of eyeDist when head turns 45°.
-              // Lerped (k * 0.15) to prevent scale vibration from raw _right.z noise.
-              const yawFactor = Math.sqrt(Math.max(0, 1.0 - _right.z * _right.z));
-              const rawYawComp = THREE.MathUtils.clamp(1.0 / Math.max(yawFactor, 0.6), 1.0, 1.35);
-              yawCompRef.current = THREE.MathUtils.lerp(yawCompRef.current, rawYawComp, k * 0.15);
-              const yawComp = yawCompRef.current;
+              // ── Frontality ───────────────────────────────────────────────
+              // 1 when facing the camera, falling toward 0 as the head turns. Used to gate
+              // face-shape sampling — NOT to scale the frame.
+              //
+              // There used to be a yaw scale compensation here, dividing scale by this same
+              // factor to undo the "perspective foreshortening of eyeDist". eyeDist is not
+              // foreshortened: it is the 3D distance between two metric world landmarks, and
+              // an anchor's world position is R*t + tvec, so the separation reduces to
+              // |t1 - t2| — invariant to head rotation. The correction was undoing something
+              // that never happened, and inflated the frame by up to 35% the moment the user
+              // turned their head: a 142mm frame rendered at 181mm at a 35 degree turn.
+              const frontality = Math.sqrt(Math.max(0, 1.0 - _right.z * _right.z));
+
+              // Face-shape sampling. Every 6th frame is ample: the stabiliser wants a few
+              // seconds of independent looks, not the same face 120 times a second.
+              shapeFrameRef.current++;
+              if (shapeFrameRef.current % 6 === 0) sampleFaceShape(frontality);
 
               // ── Detect User Slider Adjustments ────────────────────────────
               if (lastAdjRef.current) {
@@ -980,7 +996,20 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               const isSliderActive = adjChangeCountRef.current > 0;
               if (isSliderActive) adjChangeCountRef.current--;
 
-              const rawTargetScale = (eyeDist * AR.SCALE_K / rawWidthRef.current) * adj.scale * faceSizeMultiplier * yawComp;
+              // ── Shape-driven fit refinement ──────────────────────────────
+              // Width is driven by the MEASURED face width above; shape only refines it.
+              // Lerped so the moment the stabiliser locks isn't a visible pop.
+              const fit = lastShapeRef.current ? SHAPE_FIT[lastShapeRef.current] : null;
+              shapeWidthRef.current = THREE.MathUtils.lerp(
+                shapeWidthRef.current, fit ? fit.widthScale : 1, k * 0.05,
+              );
+              shapeSeatRef.current = THREE.MathUtils.lerp(
+                shapeSeatRef.current, fit ? fit.seatOffset : 0, k * 0.05,
+              );
+
+              const rawTargetScale =
+                (eyeDist * AR.SCALE_K / rawWidthRef.current) *
+                adj.scale * faceSizeMultiplier * shapeWidthRef.current;
 
               // ── 1. Scale Deadband (Zero Shimmer) ──────────────────────────
               if (lastStableScaleRef.current === 0) {
@@ -1023,7 +1052,7 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               const userZ = adj.positionZ * eyeDist * 2.5;
               const userX = adj.positionX * eyeDist * 2.5;
 
-              _pos.addScaledVector(_up, -(AR.SEAT_DOWN * eyeDist) + userY);
+              _pos.addScaledVector(_up, -((AR.SEAT_DOWN + shapeSeatRef.current) * eyeDist) + userY);
               _pos.addScaledVector(_fwd, AR.SEAT_FWD * eyeDist + userZ);
               _pos.addScaledVector(_right, userX);
 
@@ -1037,15 +1066,17 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               const kPos = 1.0 - Math.exp(-kPosRate * clampedDt);
               const kRot = 1.0 - Math.exp(-kRotRate * clampedDt);
 
-              const TARGET_FRAME_ASPECT = 0.38;
-              const currentAspect = rawAspectRef.current > 0 ? rawAspectRef.current : TARGET_FRAME_ASPECT;
-              const aspectCorrection = TARGET_FRAME_ASPECT / Math.min(currentAspect, 1.0);
+              // The frame is scaled UNIFORMLY. A previous 'aspect correction' stretched every
+              // model vertically toward a fixed 0.38 height:width, by up to +/-35% — which
+              // erased the genuine difference between a tall aviator and a shallow rectangle,
+              // i.e. exactly what distinguishes the products being sold. Lens height is a real
+              // measured dimension of a real object; it is not ours to normalise.
 
               // ── 3. First-Frame Instant Snap ────────────────────────────────
               if (!wasTrackingRef.current) {
                 glasses.position.copy(_pos);
                 glasses.quaternion.copy(_qTarget);
-                glasses.scale.set(targetScale, targetScale * aspectCorrection, targetScale * templeZ);
+                glasses.scale.set(targetScale, targetScale, targetScale * templeZ);
                 wasTrackingRef.current = true;
               } else {
                 if (posDelta > 0.0012 || isSliderActive) {
@@ -1056,8 +1087,7 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                 }
                 const sPrev = glasses.scale.x;
                 const s = THREE.MathUtils.lerp(sPrev, targetScale, kPos);
-                const sy = s * THREE.MathUtils.clamp(aspectCorrection, 0.70, 1.35);
-                glasses.scale.set(s, sy, s * templeZ);
+                glasses.scale.set(s, s, s * templeZ);
               }
 
               glasses.visible = true; // Show glasses when face pose is tracked
@@ -1065,6 +1095,14 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             } else {
               wasTrackingRef.current = false;
               lastStableScaleRef.current = 0;
+              // A brief drop-out is the same person blinking or stepping out of frame; a long
+              // one may be somebody else sitting down. Only the latter releases the lock.
+              lostFramesRef.current++;
+              if (lostFramesRef.current === AR.SHAPE_RELEASE_FRAMES) {
+                shapeStabilizerRef.current.reset();
+                lastShapeRef.current = null;
+                onFaceShapeDetect?.(null);
+              }
               if (glasses) {
                 glasses.visible = false; // Hide glasses completely when no face is detected
               }

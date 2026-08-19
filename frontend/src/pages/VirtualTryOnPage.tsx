@@ -72,6 +72,10 @@ export default function VirtualTryOnPage() {
   const [selectedCategory,   setSelectedCategory]   = useState<string>("All");
   const [arStatus,           setArStatus]           = useState<TryOnStatus>("loading");
   const [detectedShape,      setDetectedShape]      = useState<FaceShape | null>(null);
+  // On a phone the info cards blanketed roughly 40% of the camera view — including the
+  // face they describe. They start collapsed to chips there and expand on tap; on
+  // desktop there is room, so they are always open.
+  const [infoOpen,           setInfoOpen]           = useState(false);
   const [hasConsent,         setHasConsent]         = useState(() =>
     localStorage.getItem("specsvision_cam_consent") === "true",
   );
@@ -396,39 +400,71 @@ export default function VirtualTryOnPage() {
               </div>
             )}
 
-            {/* Info overlays — a flow-stacked column so cards can never collide, and capped
-                against the viewport width so they don't blanket the face on small phones.
-                (The face-shape card used to be pinned at a hard-coded top-[104px], which
-                overlapped whenever the product name wrapped to two lines.) */}
-            <div className="pointer-events-none absolute left-2.5 top-2.5 sm:left-4 sm:top-4 z-10 flex max-w-[52vw] flex-col gap-2 sm:max-w-[240px]">
-              <div className="rounded-2xl border border-white/10 bg-black/60 px-3 py-2 backdrop-blur-md shadow-xl sm:px-4 sm:py-3">
-                <span className="block text-[9px] font-bold uppercase tracking-widest text-purple-400">Now Trying</span>
-                <h2 className="mt-0.5 truncate text-xs font-bold text-white leading-tight sm:text-sm">
+            {/* Info overlays.
+                Phone: a row of compact chips, tappable to reveal the full cards. Desktop:
+                the cards themselves, since there is width to spare. The camera view is the
+                product here — covering the user's face with metadata about the frame they
+                are trying to see on that face defeats the point. */}
+            <div className="absolute left-2.5 top-2.5 z-10 flex max-w-[70vw] flex-col gap-2 sm:left-4 sm:top-4 sm:max-w-[240px]">
+              {/* Collapsed chips — small screens only, and only while collapsed. */}
+              <button
+                type="button"
+                onClick={() => setInfoOpen((o) => !o)}
+                aria-expanded={infoOpen}
+                className={`flex items-center gap-1.5 self-start rounded-full border border-white/10 bg-black/60 px-3 py-1.5 backdrop-blur-md shadow-lg active:scale-95 sm:hidden ${infoOpen ? "hidden" : ""}`}
+              >
+                <MaterialIcon name="visibility" className="!text-sm text-purple-300" />
+                <span className="max-w-[38vw] truncate text-[10px] font-bold text-white">
                   {selected?.name ?? "Select a frame"}
-                </h2>
-                {selected && (
-                  <p className="mt-0.5 text-[10px] text-slate-400 truncate">
-                    {selected.category} · {formatPrice(selected.price)}
-                  </p>
+                </span>
+                {detectedShape && (
+                  <span className="rounded-full bg-purple-500/25 px-1.5 py-0.5 text-[9px] font-bold text-purple-200">
+                    {detectedShape}
+                  </span>
                 )}
-              </div>
+                <MaterialIcon name="expand_more" className="!text-sm text-slate-400" />
+              </button>
 
-              {/* Detected face shape + fit guidance. The blurb is desktop-only — on a phone
-                  the card would otherwise cover a third of the camera view. */}
-              {detectedShape && (
-                <div className="rounded-2xl border border-purple-400/20 bg-black/60 px-3 py-2 backdrop-blur-md shadow-xl animate-in fade-in slide-in-from-left-3 duration-300 sm:px-4 sm:py-3">
-                  <div className="flex items-center gap-1.5">
-                    <MaterialIcon name="face" className="!text-sm text-purple-300" />
-                    <span className="text-[9px] font-bold uppercase tracking-widest text-purple-400">Face Shape</span>
-                  </div>
-                  <p className="mt-0.5 text-xs font-bold text-white leading-tight sm:text-sm">{detectedShape}</p>
-                  <p className="mt-1 hidden text-[10px] text-slate-300 leading-snug sm:block">{SHAPE_GUIDE[detectedShape].blurb}</p>
-                  <p className="mt-1 text-[10px] leading-snug text-slate-400 sm:mt-1.5">
-                    <span className="text-purple-300 font-semibold">Best fit:</span>{" "}
-                    {SHAPE_GUIDE[detectedShape].recommend.slice(0, 3).join(", ")}
-                  </p>
+              {/* Full cards — always on desktop, on phones only once expanded. */}
+              <div className={`${infoOpen ? "flex" : "hidden"} flex-col gap-2 sm:flex`}>
+                <div className="pointer-events-none rounded-2xl border border-white/10 bg-black/60 px-3 py-2 backdrop-blur-md shadow-xl sm:px-4 sm:py-3">
+                  <span className="block text-[9px] font-bold uppercase tracking-widest text-purple-400">Now Trying</span>
+                  <h2 className="mt-0.5 truncate text-xs font-bold text-white leading-tight sm:text-sm">
+                    {selected?.name ?? "Select a frame"}
+                  </h2>
+                  {selected && (
+                    <p className="mt-0.5 text-[10px] text-slate-400 truncate">
+                      {selected.category} · {formatPrice(selected.price)}
+                    </p>
+                  )}
                 </div>
-              )}
+
+                {/* Detected face shape + fit guidance. The blurb is desktop-only — on a phone
+                    the card would otherwise cover a third of the camera view. */}
+                {detectedShape && (
+                  <div className="pointer-events-none rounded-2xl border border-purple-400/20 bg-black/60 px-3 py-2 backdrop-blur-md shadow-xl animate-in fade-in slide-in-from-left-3 duration-300 sm:px-4 sm:py-3">
+                    <div className="flex items-center gap-1.5">
+                      <MaterialIcon name="face" className="!text-sm text-purple-300" />
+                      <span className="text-[9px] font-bold uppercase tracking-widest text-purple-400">Face Shape</span>
+                    </div>
+                    <p className="mt-0.5 text-xs font-bold text-white leading-tight sm:text-sm">{detectedShape}</p>
+                    <p className="mt-1 hidden text-[10px] text-slate-300 leading-snug sm:block">{SHAPE_GUIDE[detectedShape].blurb}</p>
+                    <p className="mt-1 text-[10px] leading-snug text-slate-400 sm:mt-1.5">
+                      <span className="text-purple-300 font-semibold">Best fit:</span>{" "}
+                      {SHAPE_GUIDE[detectedShape].recommend.slice(0, 3).join(", ")}
+                    </p>
+                  </div>
+                )}
+
+                {/* Collapse control, phones only. */}
+                <button
+                  type="button"
+                  onClick={() => setInfoOpen(false)}
+                  className="self-start rounded-full border border-white/10 bg-black/60 px-3 py-1 text-[10px] font-semibold text-slate-300 backdrop-blur-md active:scale-95 sm:hidden"
+                >
+                  Hide
+                </button>
+              </div>
             </div>
 
             {/* Status Pills */}
