@@ -83,10 +83,16 @@ const AR = {
   // Cap on outward bend, as a fraction of the model's own half-width, so a bad head
   // measurement can never splay the arms into a wishbone.
   TEMPLE_SPLAY_MAX: 0.45,
-  // Where along the model's depth the arm is considered to begin. Everything in front of
-  // HINGE_START is left untouched, so the frame's own width never changes.
-  TEMPLE_HINGE_START: 0.30,
-  TEMPLE_HINGE_END: 0.55,
+  // The hinge is DETECTED from the model's own geometry, not assumed. These only control
+  // the detector: a depth slice counts as arm once its narrowest vertex sits beyond this
+  // fraction of the model's half-width (the frame front always has geometry near the
+  // centre line — bridge, lenses — while an arm is two separate rails), and the bend eases
+  // in over this much of the depth so it starts at the hinge rather than snapping on.
+  TEMPLE_RAIL_FRACTION: 0.35,
+  TEMPLE_HINGE_EASE: 0.10,
+  // How far below the ear landmark the arm tip is aimed, in world cm, so the arm rests on
+  // the ear rather than hovering at the exact landmark.
+  TEMPLE_EAR_DROP: 0.3,
   SMOOTH: 30,        // pose smoothing (calm, stable pose tracking)
   // cos of the maximum head turn whose landmarks are trusted for face-shape sampling.
   // 0.90 is about 25 degrees of yaw.
@@ -148,10 +154,24 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
      * geometry instead of accumulating drift across updates.
      */
     const splayRef = useRef<{
-      parts: Array<{ attr: THREE.BufferAttribute; orig: Float32Array; ramp: Float32Array }>;
+      parts: Array<{
+        geom: THREE.BufferGeometry;
+        attr: THREE.BufferAttribute;
+        orig: Float32Array;
+        /** Per-vertex X and Y in model-root space, centred on the frame. */
+        rootX: Float32Array;
+        /** Per-vertex hinge weight: 0 through the frame front, 1 along the arm. */
+        w: Float32Array;
+        /** Model-root +X and +Y expressed in this mesh's own local space. */
+        dirX: THREE.Vector3;
+        dirY: THREE.Vector3;
+      }>;
       halfWidth: number;
-      applied: number;
-    }>({ parts: [], halfWidth: 1, applied: 0 });
+      /** Mean root-space Y of the arm tips, centred — the reference for aiming at the ear. */
+      tipY: number;
+      appliedX: number;
+      appliedY: number;
+    }>({ parts: [], halfWidth: 1, tipY: 0, appliedX: -1e9, appliedY: -1e9 });
     /** Real-time frameSrc ref to prevent closure race condition on initial route mount. */
     const frameSrcRef = useRef<string | null | undefined>(frameSrc);
     const loadIdRef = useRef(0);
@@ -318,41 +338,122 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             const rawSize = rawBox.getSize(new THREE.Vector3());
             const rawCenter = rawBox.getCenter(new THREE.Vector3());
 
-            // Prepare the temple splay.
+            // Analyse the temple arms.
             //
-            // A frame is scaled so its FRONT matches the face, but the arms then run straight
-            // back at that same width — and a skull is wider than a frame. On an average head
-            // the arms end up ~6mm inside the face-mesh occluder on each side, so the occluder
-            // correctly hides them and they appear to be cut off partway along. The wider the
-            // head, the earlier they vanish, which is why a broader face sees it worst.
+            // Everything here is derived from the model's own geometry rather than assumed,
+            // because every frame is modelled differently — a rimless, a chunky acetate and a
+            // thin-temple aviator put their hinge in completely different places. A previous
+            // version hard-coded the hinge at 30% of the model's depth; on the first frame
+            // actually measured it sits at 10%, so two thirds of the arm received no bend at
+            // all and stayed inside the head. Detecting it costs one pass over the vertices at
+            // load and is then free.
             //
-            // Real temples solve this by bending outward from the hinge to clear the skull, so
-            // we do the same: each vertex gets a weight that is ~0 at the frame front and rises
-            // quadratically toward the tip, which is how a beam pivoting at a hinge actually
-            // deflects. The original positions are kept so every update re-bends from the
-            // source rather than compounding.
+            // The detector: walk depth slices from the lens plane backwards and find the first
+            // slice whose NARROWEST vertex is far from the centre line. A frame front always
+            // has geometry near the centre (bridge, nose pads, inner lens edges); an arm is two
+            // separate rails with nothing between them. That transition is the hinge.
+            //
+            // Work is done in model-ROOT space and written back through each mesh's own inverse
+            // transform, so a model exported with a net node rotation bends along the same axis
+            // as one exported without.
             {
-              const parts: Array<{ attr: THREE.BufferAttribute; orig: Float32Array; ramp: Float32Array }> = [];
+              const meshes: THREE.Mesh[] = [];
+              model.traverse((child) => {
+                if (child instanceof THREE.Mesh && child.geometry?.attributes?.position) meshes.push(child);
+              });
+
               const depth = rawSize.z || 1;
               const backZ = rawBox.max.z;
-              let halfWidth = 1e-6;
-              model.traverse((child) => {
-                if (!(child instanceof THREE.Mesh) || !child.geometry?.attributes?.position) return;
+              const _v = new THREE.Vector3();
+
+              // Root-space positions per mesh.
+              const rootPos = meshes.map((child) => {
                 const attr = child.geometry.attributes.position as THREE.BufferAttribute;
-                const orig = new Float32Array(attr.array as ArrayLike<number>);
-                const ramp = new Float32Array(attr.count);
+                const out = new Float32Array(attr.count * 3);
                 for (let i = 0; i < attr.count; i++) {
-                  // Normalised distance behind the frame front: 0 at the lens plane, 1 at the tip.
-                  const t = THREE.MathUtils.clamp((backZ - orig[i * 3 + 2]) / depth, 0, 1);
-                  // Zero through the frame front, easing to full across the hinge. This is what
-                  // guarantees the frame's own width is never touched — only the arms move.
-                  ramp[i] = THREE.MathUtils.smoothstep(t, AR.TEMPLE_HINGE_START, AR.TEMPLE_HINGE_END);
-                  const ax = Math.abs(orig[i * 3]);
-                  if (ax > halfWidth) halfWidth = ax;
+                  _v.fromBufferAttribute(attr, i).applyMatrix4(child.matrixWorld);
+                  out[i * 3] = _v.x - rawCenter.x;
+                  out[i * 3 + 1] = _v.y - rawCenter.y;
+                  out[i * 3 + 2] = _v.z;
                 }
-                parts.push({ attr, orig, ramp });
+                return out;
               });
-              splayRef.current = { parts, halfWidth, applied: 0 };
+
+              let halfWidth = 1e-6;
+              for (const arr of rootPos) {
+                for (let i = 0; i < arr.length; i += 3) halfWidth = Math.max(halfWidth, Math.abs(arr[i]));
+              }
+
+              const BINS = 24;
+              const narrowest = new Array<number>(BINS).fill(Number.POSITIVE_INFINITY);
+              for (const arr of rootPos) {
+                for (let i = 0; i < arr.length; i += 3) {
+                  const t = THREE.MathUtils.clamp((backZ - arr[i + 2]) / depth, 0, 1);
+                  const bin = Math.min(BINS - 1, Math.floor(t * BINS));
+                  const ax = Math.abs(arr[i]);
+                  if (ax < narrowest[bin]) narrowest[bin] = ax;
+                }
+              }
+
+              let hinge = -1;
+              for (let bin = 0; bin < BINS; bin++) {
+                if (narrowest[bin] > AR.TEMPLE_RAIL_FRACTION * halfWidth) {
+                  hinge = bin / BINS;
+                  break;
+                }
+              }
+
+              if (hinge < 0) {
+                // No identifiable arms (a lens-only or single-piece model). Bending guesswork
+                // into it would deform the product, so leave the geometry alone.
+                splayRef.current = { parts: [], halfWidth, tipY: 0, appliedX: -1e9, appliedY: -1e9 };
+              } else {
+                const easeEnd = Math.min(1, hinge + AR.TEMPLE_HINGE_EASE);
+                const parts: (typeof splayRef.current)["parts"] = [];
+                let tipSum = 0;
+                let tipN = 0;
+
+                meshes.forEach((child, mi) => {
+                  const attr = child.geometry.attributes.position as THREE.BufferAttribute;
+                  const arr = rootPos[mi];
+                  const w = new Float32Array(attr.count);
+                  const rootX = new Float32Array(attr.count);
+                  let touched = false;
+                  for (let i = 0; i < attr.count; i++) {
+                    const t = THREE.MathUtils.clamp((backZ - arr[i * 3 + 2]) / depth, 0, 1);
+                    w[i] = THREE.MathUtils.smoothstep(t, hinge, easeEnd);
+                    rootX[i] = arr[i * 3];
+                    if (w[i] > 1e-3) touched = true;
+                    if (t > 0.92) {
+                      tipSum += arr[i * 3 + 1];
+                      tipN++;
+                    }
+                  }
+                  if (!touched) return; // a pure frame-front mesh never moves
+
+                  // Root +X and +Y in this mesh's local space. Not normalised on purpose: the
+                  // inverse already carries the scale, so multiplying by a root-space distance
+                  // produces exactly that displacement in root space.
+                  const m3 = new THREE.Matrix3().setFromMatrix4(child.matrixWorld).invert();
+                  parts.push({
+                    geom: child.geometry as THREE.BufferGeometry,
+                    attr,
+                    orig: new Float32Array(attr.array as ArrayLike<number>),
+                    rootX,
+                    w,
+                    dirX: new THREE.Vector3(1, 0, 0).applyMatrix3(m3),
+                    dirY: new THREE.Vector3(0, 1, 0).applyMatrix3(m3),
+                  });
+                });
+
+                splayRef.current = {
+                  parts,
+                  halfWidth,
+                  tipY: tipN > 0 ? tipSum / tipN : 0,
+                  appliedX: -1e9,
+                  appliedY: -1e9,
+                };
+              }
             }
 
             // Shift model so that:
@@ -726,8 +827,16 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
           }
 
           // Face mesh occluder — hides the temple arms where they pass behind the head.
-          // Negative polygonOffset pushes its depth value BEHIND the face surface, preventing
-          // it from clipping front-facing frame & lens edges at the nose/cheek sides on turns.
+          //
+          // The offset used to be factor -1, units -4. Both signs were wrong for the stated
+          // intent: polygon offset is ADDED to depth, so negative values pull the occluder
+          // TOWARD the camera and make it occlude more, not less. Worse, `factor` multiplies
+          // the depth SLOPE, which is at its maximum exactly at the head silhouette — where
+          // the temple arms run. The occluder was inflating there and eating arms that were
+          // genuinely outside the head, which no amount of splay could fix because the bias
+          // scales with viewing angle rather than distance.
+          // Now: no slope term at all, and a small constant push AWAY from the camera, which
+          // is what protects the lens edges from z-fighting without swallowing anything.
           const faceMesh = mindarInstance.addFaceMesh();
           faceMesh.material = new THREE.MeshBasicMaterial({
             colorWrite: false,
@@ -735,8 +844,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             depthTest: true,
             side: THREE.DoubleSide,
             polygonOffset: true,
-            polygonOffsetFactor: -1,
-            polygonOffsetUnits: -4,
+            polygonOffsetFactor: 0,
+            polygonOffsetUnits: 4,
           });
           faceMesh.renderOrder = 0;
           faceMesh.visible = true;
@@ -1095,18 +1204,16 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                   templeZRef.current = THREE.MathUtils.lerp(templeZRef.current, solved, k);
                 }
 
-                // ── Bend the arms outward to clear the head ────────────────
-                // Every arm vertex is pushed out to at least the WIDEST measured half-width of
-                // the head. Targeting the maximum rather than the head's width at each vertex's
-                // own depth is deliberate: the maximum is an upper bound at every depth, so no
-                // part of the arm can be left inside the occluder and get sliced — which is
-                // what a tip-weighted bend did, since it barely moved the middle of the arm and
-                // that is where the skull is already near its widest.
+                // ── Sit the arms on the ears ──────────────────────────────
+                // Two independent corrections, both measured from the wearer, both fading in
+                // from zero at the hinge so the frame's own width and shape never change:
                 //
-                // It scales with the person: measured live, so a broad head gets a large bend
-                // and a narrow one gets none at all. `Math.max(0, ...)` means arms already
-                // outside are never pulled in, and the frame front never moves because its
-                // hinge weight is zero.
+                //  X — push each arm vertex out to at least the widest measured half-width of
+                //      the head. The maximum is an upper bound at every depth, so no part of
+                //      the arm is left inside the occluder to be sliced.
+                //  Y — shift the arm so its TIP lands on the ear landmark. Previously the arm
+                //      only had its LENGTH solved; where it pointed was whatever the model
+                //      happened to draw, so it ran past the ear rather than onto it.
                 const splay = splayRef.current;
                 if (splay.parts.length > 0 && targetScale > 1e-6) {
                   const sa2 = shapeAnchorsRef.current;
@@ -1118,24 +1225,44 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                     cr.getWorldPosition(_cheekR);
                     headHalf = Math.max(headHalf, _cheekL.distanceTo(_cheekR) * 0.5);
                   }
-                  const targetHalfModel = (headHalf + AR.TEMPLE_CLEARANCE) / targetScale;
-                  const capped = Math.min(
-                    targetHalfModel,
+
+                  const targetHalf = Math.min(
+                    (headHalf + AR.TEMPLE_CLEARANCE) / targetScale,
                     splay.halfWidth * (1 + AR.TEMPLE_SPLAY_MAX),
                   );
 
-                  // Rewriting ~30k vertices is cheap but not free, and the target barely moves
-                  // once a face is tracked. Only rebuild on a change worth seeing.
-                  if (Math.abs(capped - splay.applied) > splay.halfWidth * 0.01) {
-                    splay.applied = capped;
+                  // Where the ear sits vertically relative to the frame, in model units.
+                  const earUp = _tmp.subVectors(_earMid, _pos).dot(_up) - AR.TEMPLE_EAR_DROP;
+                  const wantTipY = THREE.MathUtils.clamp(
+                    earUp / targetScale - splay.tipY,
+                    -splay.halfWidth * AR.TEMPLE_SPLAY_MAX,
+                    splay.halfWidth * AR.TEMPLE_SPLAY_MAX,
+                  );
+
+                  // Rewriting the arm vertices is cheap but not free, and neither target moves
+                  // much once a face is tracked. Only rebuild on a change worth seeing.
+                  const eps = splay.halfWidth * 0.01;
+                  if (
+                    Math.abs(targetHalf - splay.appliedX) > eps ||
+                    Math.abs(wantTipY - splay.appliedY) > eps
+                  ) {
+                    splay.appliedX = targetHalf;
+                    splay.appliedY = wantTipY;
                     for (const part of splay.parts) {
                       const arr = part.attr.array as Float32Array;
                       for (let i = 0; i < part.attr.count; i++) {
-                        const x = part.orig[i * 3];
-                        const push = Math.max(0, capped - Math.abs(x)) * part.ramp[i];
-                        arr[i * 3] = x + Math.sign(x) * push;
+                        const w = part.w[i];
+                        const x = part.rootX[i];
+                        const px = Math.sign(x) * Math.max(0, targetHalf - Math.abs(x)) * w;
+                        const py = wantTipY * w;
+                        arr[i * 3] = part.orig[i * 3] + part.dirX.x * px + part.dirY.x * py;
+                        arr[i * 3 + 1] = part.orig[i * 3 + 1] + part.dirX.y * px + part.dirY.y * py;
+                        arr[i * 3 + 2] = part.orig[i * 3 + 2] + part.dirX.z * px + part.dirY.z * py;
                       }
                       part.attr.needsUpdate = true;
+                      // The bounds moved with the vertices; a stale sphere frustum-culls the
+                      // arms at the edge of frame.
+                      part.geom.computeBoundingSphere();
                     }
                   }
                 }
