@@ -220,6 +220,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
     const posSpeedRef = useRef(0);
     const rotSpeedRef = useRef(0);
     const scaleSpeedRef = useRef(0);
+    /** Loop time at the last pose CHANGE, so speed is measured over the real interval. */
+    const lastPoseChangeRef = useRef(0);
     /** Counter of frames to bypass deadband when user moves a slider. */
     const adjChangeCountRef = useRef(0);
     /**
@@ -246,6 +248,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
       halfWidth: number;
       /** Root-space Z of the hinge line, the axis the arms rotate about. */
       hingeZ: number;
+      /** Root-space |X| of the arm at the hinge — each arm turns about its OWN joint. */
+      hingeX: number;
       /** Mean root-space Y of the arm tips, centred — the reference for aiming at the ear. */
       tipY: number;
       /** Mean backward distance from hinge to arm tip, in model units. */
@@ -254,7 +258,7 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
       appliedX: number;
       appliedY: number;
     }>({
-      parts: [], halfWidth: 1, hingeZ: 0, tipY: 0, armReach: 1,
+      parts: [], halfWidth: 1, hingeZ: 0, hingeX: 0, tipY: 0, armReach: 1,
       appliedAngle: -1e9, appliedX: -1e9, appliedY: -1e9,
     });
     /** Real-time frameSrc ref to prevent closure race condition on initial route mount. */
@@ -509,7 +513,7 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                 // No identifiable arms (a lens-only or single-piece model). Bending guesswork
                 // into it would deform the product, so leave the geometry alone.
                 splayRef.current = {
-                  parts: [], halfWidth, hingeZ: 0, tipY: 0, armReach: 1,
+                  parts: [], halfWidth, hingeZ: 0, hingeX: 0, tipY: 0, armReach: 1,
                   appliedX: -1e9, appliedY: -1e9, appliedAngle: -1e9,
                 };
               } else {
@@ -519,6 +523,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                 let tipSum = 0;
                 let tipN = 0;
                 let reachSum = 0;
+                let hingeXSum = 0;
+                let hingeXN = 0;
 
                 meshes.forEach((child, mi) => {
                   const attr = child.geometry.attributes.position as THREE.BufferAttribute;
@@ -545,6 +551,11 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                       reachSum += hingeZ - arr[i * 3 + 2];
                       tipN++;
                     }
+                    // Where the arm sits laterally as it leaves the joint.
+                    if (t >= hinge && t <= filletEnd) {
+                      hingeXSum += Math.abs(arr[i * 3]);
+                      hingeXN++;
+                    }
                   }
                   if (!touched) return; // a pure frame-front mesh never moves
 
@@ -569,6 +580,7 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                   parts,
                   halfWidth,
                   hingeZ,
+                  hingeX: hingeXN > 0 ? hingeXSum / hingeXN : halfWidth,
                   tipY: tipN > 0 ? tipSum / tipN : 0,
                   armReach: tipN > 0 ? Math.max(1e-6, reachSum / tipN) : 1,
                   appliedX: -1e9,
@@ -1095,6 +1107,9 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
 
           // Three.js clock to compute delta time for frame-rate independence
           const clock = new THREE.Clock();
+          /** Monotonic loop time in seconds, accumulated from dt so it cannot skip on a stall.
+              Head speed is measured against this rather than against frame counts. */
+          let loopTime = 0;
           // Scratch vectors reused each frame for the ear auto-fit (no per-frame allocation).
           const _earL = new THREE.Vector3();
           const _earR = new THREE.Vector3();
@@ -1171,11 +1186,14 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               !!eyeLg?.visible && !!eyeRg?.visible && !!foreg?.visible && !!ching?.visible;
             const poseReady = !!glasses && faceLandmarksVisible;
 
+            // Read once per frame, tracking or not. Reading it only inside the tracking
+            // branch let the delta accumulate across a no-face gap, so the first frame after
+            // re-acquisition saw an inflated dt and the smoothing jumped.
+            const clampedDt = Math.min(clock.getDelta(), 0.1);
+            loopTime += clampedDt;
+
             if (poseReady) {
               const adj = adjustmentsRef.current;
-
-              // Frame-rate-independent smoothing factor.
-              const clampedDt = Math.min(clock.getDelta(), 0.1);
               const k = 1.0 - Math.exp(-AR.SMOOTH * clampedDt);
 
               // ── Head-pose basis from tracked landmark POSITIONS ──────────
@@ -1393,10 +1411,15 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                         const a = -Math.sign(x) * angle * w;
                         const cos = Math.cos(a);
                         const sin = Math.sin(a);
-                        // Rotate about the vertical axis through the hinge line.
-                        const dz = part.rootZ[i] - splay.hingeZ;
-                        const dx = x * cos + dz * sin - x;
-                        const ddz = -x * sin + dz * cos - dz;
+                        // Rotate about the vertical axis through THIS arm's own joint.
+                        // Using the model centre line instead put the pivot half a frame
+                        // away, so the arm root swung backward off the front and the whole
+                        // temple travelled on a long lever — the arm appeared detached and
+                        // flung outward rather than hinged.
+                        const rx = x - Math.sign(x) * splay.hingeX;
+                        const rz = part.rootZ[i] - splay.hingeZ;
+                        const dx = rx * cos + rz * sin - rx;
+                        const ddz = -rx * sin + rz * cos - rz;
                         const py = wantTipY * w;
                         arr[i * 3] =
                           part.orig[i * 3] + part.dirX.x * dx + part.dirY.x * py + part.dirZ.x * ddz;
@@ -1418,26 +1441,51 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               // ── 2. Placement smoothing, adaptive to head speed ──────────────
               // Measured from the TARGET rather than the rendered pose, so the rate reacts
               // to the head moving rather than to the frame catching up with it.
-              const kSpeed = 1.0 - Math.exp(-AR.ADAPT_SPEED_SMOOTH * clampedDt);
-              const invDt = clampedDt > 1e-5 ? 1 / clampedDt : 0;
+              // Speed is measured across POSE CHANGES, not rendered frames.
+              //
+              // MindAR detects on its own loop at roughly 25Hz while this renders at the
+              // display's rate, so most frames replay an unchanged pose. Dividing by the
+              // render dt made 83% of frames at 144Hz report the head as stationary --
+              // dragging the smoothed speed to zero and pinning the adaptive rate at its
+              // minimum, i.e. maximum lag -- while the one frame that did move reported 5.8x
+              // the real speed. The faster the display, the worse it got, which is why
+              // stickiness differed between 60Hz and 144Hz panels.
+              const posDelta = prevTargetPosRef.current.distanceTo(_pos);
+              const rotDelta = prevTargetQuatRef.current.angleTo(_qTarget);
+              const poseMoved = posDelta > 1e-6 || rotDelta > 1e-6;
 
-              const rawPosSpeed = prevTargetPosRef.current.distanceTo(_pos) * invDt;
-              const rawRotSpeed = prevTargetQuatRef.current.angleTo(_qTarget) * invDt;
-              const rawScaleSpeed =
-                prevTargetScaleRef.current > 1e-9
-                  ? (Math.abs(targetScale - prevTargetScaleRef.current) / prevTargetScaleRef.current) * invDt
-                  : 0;
+              if (poseMoved) {
+                const since = Math.max(1e-3, loopTime - lastPoseChangeRef.current);
+                const invDt = 1 / since;
+                const rawPosSpeed = posDelta * invDt;
+                const rawRotSpeed = rotDelta * invDt;
+                const rawScaleSpeed =
+                  prevTargetScaleRef.current > 1e-9
+                    ? (Math.abs(targetScale - prevTargetScaleRef.current) / prevTargetScaleRef.current) * invDt
+                    : 0;
 
-              // First tracked frame has no previous pose; seeding from it would read as a
-              // huge jump and snap the rates to maximum.
-              if (wasTrackingRef.current) {
-                posSpeedRef.current = THREE.MathUtils.lerp(posSpeedRef.current, rawPosSpeed, kSpeed);
-                rotSpeedRef.current = THREE.MathUtils.lerp(rotSpeedRef.current, rawRotSpeed, kSpeed);
-                scaleSpeedRef.current = THREE.MathUtils.lerp(scaleSpeedRef.current, rawScaleSpeed, kSpeed);
+                // Smoothed over the same interval, so the decay is wall-clock based and does
+                // not depend on how many frames happened to fall between detections either.
+                const kSpeed = 1.0 - Math.exp(-AR.ADAPT_SPEED_SMOOTH * since);
+                // First tracked frame has no previous pose; seeding from it would read as a
+                // huge jump and snap the rates to maximum.
+                if (wasTrackingRef.current) {
+                  posSpeedRef.current = THREE.MathUtils.lerp(posSpeedRef.current, rawPosSpeed, kSpeed);
+                  rotSpeedRef.current = THREE.MathUtils.lerp(rotSpeedRef.current, rawRotSpeed, kSpeed);
+                  scaleSpeedRef.current = THREE.MathUtils.lerp(scaleSpeedRef.current, rawScaleSpeed, kSpeed);
+                }
+                prevTargetPosRef.current.copy(_pos);
+                prevTargetQuatRef.current.copy(_qTarget);
+                prevTargetScaleRef.current = targetScale;
+                lastPoseChangeRef.current = loopTime;
+              } else if (loopTime - lastPoseChangeRef.current > 0.25) {
+                // Genuinely still for a quarter second: let the rates fall back to their
+                // resting values rather than holding the last movement's speed forever.
+                const kDecay = 1.0 - Math.exp(-AR.ADAPT_SPEED_SMOOTH * clampedDt);
+                posSpeedRef.current = THREE.MathUtils.lerp(posSpeedRef.current, 0, kDecay);
+                rotSpeedRef.current = THREE.MathUtils.lerp(rotSpeedRef.current, 0, kDecay);
+                scaleSpeedRef.current = THREE.MathUtils.lerp(scaleSpeedRef.current, 0, kDecay);
               }
-              prevTargetPosRef.current.copy(_pos);
-              prevTargetQuatRef.current.copy(_qTarget);
-              prevTargetScaleRef.current = targetScale;
 
               const rate = (min: number, slope: number, speed: number) =>
                 isSliderActive
@@ -1477,6 +1525,12 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               reportStatus("tracking");
             } else {
               wasTrackingRef.current = false;
+              // Re-seed the speed clock, or the gap counts as elapsed time and the first
+              // movement after re-acquiring reads as almost stationary.
+              lastPoseChangeRef.current = loopTime;
+              posSpeedRef.current = 0;
+              rotSpeedRef.current = 0;
+              scaleSpeedRef.current = 0;
               // A brief drop-out is the same person blinking or stepping out of frame; a long
               // one may be somebody else sitting down. Only the latter releases the lock.
               lostFramesRef.current++;
