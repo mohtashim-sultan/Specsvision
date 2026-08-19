@@ -25,7 +25,11 @@ export default function Header() {
   return (
     <>
       <header
-        className="sticky top-0 z-30 backdrop-blur-xl border-b"
+        // z-40, not z-30. Product cards position their wishlist and compare buttons at
+        // z-30 too, and with equal z-index the later element in the DOM wins - so as a card
+        // scrolled up behind this bar its buttons painted straight over the navigation.
+        // Stays below the mobile menu (z-[60]) and dropdown panels (z-[100]).
+        className="sticky top-0 z-40 backdrop-blur-xl border-b"
         style={{
           backgroundColor: 'var(--header-bg)',
           borderColor: 'var(--border-color)',
