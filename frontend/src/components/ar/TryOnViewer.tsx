@@ -425,18 +425,27 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               }
 
               const BINS = 24;
+              /** A slice needs this many vertices before it can be judged solid or rails. */
+              const MIN_BIN_VERTS = 8;
               const narrowest = new Array<number>(BINS).fill(Number.POSITIVE_INFINITY);
+              const binCount = new Array<number>(BINS).fill(0);
               for (const arr of rootPos) {
                 for (let i = 0; i < arr.length; i += 3) {
                   const t = THREE.MathUtils.clamp((backZ - arr[i + 2]) / depth, 0, 1);
                   const bin = Math.min(BINS - 1, Math.floor(t * BINS));
                   const ax = Math.abs(arr[i]);
                   if (ax < narrowest[bin]) narrowest[bin] = ax;
+                  binCount[bin]++;
                 }
               }
 
               let hinge = -1;
               for (let bin = 0; bin < BINS; bin++) {
+                // Skip empty slices. A model can have gaps along its depth, and an empty bin
+                // leaves narrowest[] at Infinity, which compares as "two rails" and stops the
+                // scan on a slice containing no geometry at all. On the second catalogue model
+                // that reported the hinge at t=0.08 when it is really at t=0.21.
+                if (binCount[bin] < MIN_BIN_VERTS) continue;
                 if (narrowest[bin] > AR.TEMPLE_RAIL_FRACTION * halfWidth) {
                   hinge = bin / BINS;
                   break;
