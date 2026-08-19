@@ -71,6 +71,9 @@ export default function Home() {
           setTotalFrames(list.length);
         }
       } catch (err) {
+        // The hero falls back to the static image and the stats to zero, which is
+        // honest: nothing was loaded. No error banner on the landing page — a retry is
+        // one navigation away in the shop.
         console.error("Failed to load featured products:", err);
       }
     })();
