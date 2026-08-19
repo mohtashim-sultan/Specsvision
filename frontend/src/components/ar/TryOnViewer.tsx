@@ -117,7 +117,25 @@ const AR = {
   // With the flare off the arm is hidden from ~60% of its length anyway, so apparent
   // length now comes from occluding it correctly rather than from stretching it.
   TEMPLE_REACH_K: 1.05,
-  SMOOTH: 30,        // pose smoothing (calm, stable pose tracking)
+  SMOOTH: 30,        // general-purpose smoothing rate for derived quantities
+
+  // Placement smoothing rates, as exponential time constants (lag = 1000/rate ms).
+  //
+  // These replace a deadband-plus-adaptive-rate scheme whose thresholds sat exactly at
+  // the landmark noise floor: 1% landmark noise produces 0.57 degrees of basis rotation,
+  // against a 0.40 degree freeze threshold and a 0.46 degree rate switch. The frame held
+  // still, then snapped at rate 30 the instant noise crossed the line, converting smooth
+  // noise into visible steps. A deadband set at the noise floor is the worst place for
+  // one -- it does not remove jitter, it makes it discrete.
+  //
+  // Plain exponential smoothing at a lower rate rejects far more: rate 12 attenuates
+  // noise 3.2x against rate 30's 2.0x. The cost is lag, which is why rotation and scale
+  // -- noisiest and most visible as shimmer -- are damped hardest, while position, where
+  // lag reads as the frame sliding off the face, is kept quicker.
+  SMOOTH_POS: 16,    // 63ms
+  SMOOTH_ROT: 12,    // 83ms
+  SMOOTH_SCALE: 8,   // 125ms; real scale barely changes, so this can be very slow
+  SMOOTH_SLIDER: 40, // while a slider is being dragged, respond immediately
   // cos of the maximum head turn whose landmarks are trusted for face-shape sampling.
   // 0.90 is about 25 degrees of yaw.
   SHAPE_MIN_FRONTALITY: 0.90,
@@ -166,8 +184,6 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
     const faceSizeMultRef = useRef(1.0);
     /** Ref tracking whether face pose was active in the previous frame (for instant snap). */
     const wasTrackingRef = useRef(false);
-    /** Stable scale threshold reference to eliminate 1-pixel scale shimmer. */
-    const lastStableScaleRef = useRef(0);
     /** Ref tracking previous adjustments state to detect user slider interactions. */
     const lastAdjRef = useRef<any>(null);
     /** Counter of frames to bypass deadband when user moves a slider. */
@@ -655,7 +671,11 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               maxTrack: 1,
               shouldFaceUser: true,
               filterMinCF: 0.001,   // calm, jitter-free when the head is still
-              filterBeta: 10,       // smooth, vibration-free movement tracking
+              // One Euro raises its cutoff in proportion to the measured derivative, and
+              // landmark NOISE registers as derivative. At beta 10 the filter reads its own
+              // jitter as motion and stops smoothing exactly when it should not. 4 keeps the
+              // response honest while holding the noise down.
+              filterBeta: 4,
               // Suppress MindAR's stock loading/scanning/error overlays — this component
               // renders its own status chrome, and MindAR's injected its own absolutely
               // positioned layers into the same container.
@@ -1159,7 +1179,7 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                 const diffRotZ = Math.abs(adj.rotationZ - lastAdjRef.current.rotationZ);
                 const diffScale = Math.abs(adj.scale - lastAdjRef.current.scale);
                 if (diffX > 1e-4 || diffY > 1e-4 || diffZ > 1e-4 || diffRotX > 1e-4 || diffRotY > 1e-4 || diffRotZ > 1e-4 || diffScale > 1e-4) {
-                  adjChangeCountRef.current = 6; // Bypass deadband for 6 frames on slider interaction
+                  adjChangeCountRef.current = 6; // Track the slider at full speed for 6 frames
                 }
               }
               lastAdjRef.current = { ...adj };
@@ -1181,16 +1201,10 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                 (eyeDist * AR.SCALE_K / rawWidthRef.current) *
                 adj.scale * faceSizeMultiplier * shapeWidthRef.current;
 
-              // ── 1. Scale Deadband (Zero Shimmer) ──────────────────────────
-              if (lastStableScaleRef.current === 0) {
-                lastStableScaleRef.current = rawTargetScale;
-              } else {
-                const scaleDeltaRatio = Math.abs(rawTargetScale - lastStableScaleRef.current) / lastStableScaleRef.current;
-                if (scaleDeltaRatio > 0.015 || isSliderActive) {
-                  lastStableScaleRef.current = rawTargetScale;
-                }
-              }
-              const targetScale = lastStableScaleRef.current;
+              // Smoothed below rather than deadbanded. A 1.5% threshold against ~1% eyeDist
+              // noise meant size held still and then jumped, which reads as the frame
+              // pulsing on the face.
+              const targetScale = rawTargetScale;
 
 
               // ── Position Base: Nose Bridge Landmark + EyeDist Scaled User Offsets ──
@@ -1229,7 +1243,13 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                 const nativeArm = rawDepthRef.current * targetScale;
                 if (nativeArm > 1e-6 && reach > 0) {
                   const solved = THREE.MathUtils.clamp(reach / nativeArm, AR.TEMPLE_MIN, AR.TEMPLE_MAX);
-                  templeZRef.current = THREE.MathUtils.lerp(templeZRef.current, solved, k);
+                  // Driven by the ear landmarks, which are among the noisiest on the mesh,
+                  // and arm length changing frame to frame reads as the temples breathing.
+                  templeZRef.current = THREE.MathUtils.lerp(
+                    templeZRef.current,
+                    solved,
+                    1.0 - Math.exp(-AR.SMOOTH_SCALE * clampedDt),
+                  );
                 }
 
                 // ── Sit the arms on the ears ──────────────────────────────
@@ -1307,15 +1327,18 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               }
               const templeZ = templeZRef.current * adj.templeLength;
 
-              // ── 2. Positional & Rotational Deadband + Adaptive Lerp ────────
-              const posDelta = glasses.position.distanceTo(_pos);
-              const rotDelta = glasses.quaternion.angleTo(_qTarget);
-
-              const kPosRate = posDelta < 0.002 && !isSliderActive ? 6 : 30;
-              const kRotRate = rotDelta < 0.008 && !isSliderActive ? 6 : 30;
-
-              const kPos = 1.0 - Math.exp(-kPosRate * clampedDt);
-              const kRot = 1.0 - Math.exp(-kRotRate * clampedDt);
+              // ── 2. Placement smoothing ─────────────────────────────────────
+              // One rate each, applied every frame. No thresholds: the frame is always
+              // moving toward the target, so there is nothing to accumulate and release.
+              const kPos = 1.0 - Math.exp(
+                -(isSliderActive ? AR.SMOOTH_SLIDER : AR.SMOOTH_POS) * clampedDt,
+              );
+              const kRot = 1.0 - Math.exp(
+                -(isSliderActive ? AR.SMOOTH_SLIDER : AR.SMOOTH_ROT) * clampedDt,
+              );
+              const kScale = 1.0 - Math.exp(
+                -(isSliderActive ? AR.SMOOTH_SLIDER : AR.SMOOTH_SCALE) * clampedDt,
+              );
 
               // The frame is scaled UNIFORMLY. A previous 'aspect correction' stretched every
               // model vertically toward a fixed 0.38 height:width, by up to +/-35% — which
@@ -1330,14 +1353,9 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                 glasses.scale.set(targetScale, targetScale, targetScale * templeZ);
                 wasTrackingRef.current = true;
               } else {
-                if (posDelta > 0.0012 || isSliderActive) {
-                  glasses.position.lerp(_pos, kPos);
-                }
-                if (rotDelta > 0.007 || isSliderActive) {
-                  glasses.quaternion.slerp(_qTarget, kRot);
-                }
-                const sPrev = glasses.scale.x;
-                const s = THREE.MathUtils.lerp(sPrev, targetScale, kPos);
+                glasses.position.lerp(_pos, kPos);
+                glasses.quaternion.slerp(_qTarget, kRot);
+                const s = THREE.MathUtils.lerp(glasses.scale.x, targetScale, kScale);
                 glasses.scale.set(s, s, s * templeZ);
               }
 
@@ -1345,7 +1363,6 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               reportStatus("tracking");
             } else {
               wasTrackingRef.current = false;
-              lastStableScaleRef.current = 0;
               // A brief drop-out is the same person blinking or stepping out of frame; a long
               // one may be somebody else sitting down. Only the latter releases the lock.
               lostFramesRef.current++;
