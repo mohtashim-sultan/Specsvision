@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Search, SlidersHorizontal } from 'lucide-react';
+import { Search, SlidersHorizontal, WifiOff } from 'lucide-react';
 import ProductCard from './ProductCard';
 import SearchBar from './shop/Searchbar';
 import FilterDropdown from './shop/FilterDropdown';
@@ -14,6 +14,10 @@ export default function Shop() {
   const [products, setProducts] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  // A failed load is not an empty catalogue. Kept apart so the page can say which
+  // happened instead of blaming the user's filters for the server being unreachable.
+  const [loadError, setLoadError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -69,6 +73,8 @@ export default function Shop() {
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
     (async () => {
       try {
         const list = await fetchProducts();
@@ -76,15 +82,17 @@ export default function Shop() {
         if (!cancelled) {
           setProducts(mapped);
           setFilteredProducts(mapped);
+          setLoadError(null);
         }
       } catch (err) {
         console.error("Failed to load products:", err);
+        if (!cancelled) setLoadError(err);
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [reloadKey]);
 
   useEffect(() => {
     setLoading(true);
@@ -229,6 +237,21 @@ export default function Shop() {
               </motion.div>
             ))}
           </div>
+        ) : loadError ? (
+          <EmptyState
+            icon={WifiOff}
+            title="Couldn't load the catalogue"
+            message="The server didn't respond. If the site has been idle it can take up to a minute to wake up \u2014 try again in a moment."
+            action={
+              <button
+                type="button"
+                onClick={() => setReloadKey((k) => k + 1)}
+                className="rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 px-6 py-3 text-sm font-semibold text-white transition hover:shadow-lg active:scale-95"
+              >
+                Try again
+              </button>
+            }
+          />
         ) : (
           <EmptyState
             icon={Search}
