@@ -1,5 +1,6 @@
 import { API_BASE } from "../config/env";
 import type { Product } from "../types/api";
+import { SHAPE_GUIDE, type FaceShape } from "../components/ar/faceShape";
 
 const BADGES = ["Best Seller", "New", "Trending", "Sale"] as const;
 
@@ -31,12 +32,45 @@ export function displayBadge(p: Product): string {
   return BADGES[Math.abs(p.id) % 4];
 }
 
-export function displayFaceShapes(p: Product): string[] {
-  if (p.category) {
-    const cat = p.category.trim();
-    return [cat, "Universal"];
+/**
+ * Which face shapes a frame category suits, inverted from SHAPE_GUIDE.
+ *
+ * SHAPE_GUIDE is written the other way round -- shape to the categories that flatter it --
+ * because that is what the try-on needs when it has detected a face. The shop needs the
+ * reverse, and deriving it here means the two can never drift apart: change a
+ * recommendation in one place and both the try-on and the filter follow.
+ */
+const SHAPES_BY_CATEGORY: Record<string, FaceShape[]> = (() => {
+  const out: Record<string, FaceShape[]> = {};
+  for (const shape of Object.keys(SHAPE_GUIDE) as FaceShape[]) {
+    for (const category of SHAPE_GUIDE[shape].recommend) {
+      const key = category.toLowerCase().replace(/[^a-z]/g, ""); // "Cat-Eye" -> "cateye"
+      (out[key] ||= []).push(shape);
+    }
   }
-  return ["Oval", "Square"];
+  return out;
+})();
+
+const ALL_SHAPES = Object.keys(SHAPE_GUIDE) as FaceShape[];
+
+/**
+ * The face shapes a product actually suits.
+ *
+ * This used to return the product's CATEGORY plus the literal "Universal", which are not
+ * face shapes at all. The shop's face-shape filter compares against this list, so it was
+ * matching on category names: filtering by "Round" returned frames whose category is Round,
+ * and those suit Square, Heart, Diamond and Oblong faces -- not Round ones. Filtering by
+ * "Heart" matched nothing, because no category is called Heart. The try-on, meanwhile, was
+ * using SHAPE_GUIDE correctly through isBestFit(), so the two halves of the app disagreed
+ * about the same question.
+ *
+ * A category the guide does not cover -- "Premium", "Essential" and the like describe a
+ * price tier, not a shape -- cannot be judged on this basis, so it is offered for every
+ * face rather than hidden from all of them.
+ */
+export function displayFaceShapes(p: Product): FaceShape[] {
+  const key = (p.category || "").toLowerCase().replace(/[^a-z]/g, "");
+  return SHAPES_BY_CATEGORY[key] ?? ALL_SHAPES;
 }
 
 export function toStorefrontProduct(p: Product): StorefrontProduct {

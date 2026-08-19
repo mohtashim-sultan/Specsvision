@@ -9,6 +9,7 @@ import LoadingSpinner from './common/LoadingSpinner';
 import EmptyState from './common/EmptyState';
 import { fetchProducts } from '../api/productsApi';
 import { toStorefrontProduct } from '../utils/storefrontProduct';
+import { SHAPE_GUIDE } from './ar/faceShape';
 
 export default function Shop() {
   const [products, setProducts] = useState([]);
@@ -62,12 +63,10 @@ export default function Shop() {
     { value: 'Trending', label: 'Trending' },
     { value: 'Sale', label: 'Sale' },
   ];
-  const faceShapes = [
-    { value: 'Oval', label: 'Oval' },
-    { value: 'Square', label: 'Square' },
-    { value: 'Round', label: 'Round' },
-    { value: 'Heart', label: 'Heart' },
-  ];
+  // Straight from SHAPE_GUIDE, so the filter always offers exactly the shapes the
+  // try-on can detect. The hardcoded list here was missing Diamond and Oblong entirely,
+  // so two of the six were undetectable by filter no matter what the catalogue held.
+  const faceShapes = Object.keys(SHAPE_GUIDE).map((s) => ({ value: s, label: s }));
 
   const activeFilterCount = selectedCategories.length + selectedBadges.length + selectedFaceShapes.length + selectedBrands.length + selectedStyles.length + selectedPriceRanges.length;
 
