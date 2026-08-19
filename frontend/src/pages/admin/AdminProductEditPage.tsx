@@ -443,6 +443,18 @@ export default function AdminProductEditPage() {
           {/* Specifications (data-driven; shown on the product page) */}
           <div className="md:col-span-2 border-t border-outline-variant pt-md">
             <h3 className="mb-sm font-label text-label-md font-semibold text-on-surface">Frame Specifications</h3>
+            {/* The three millimetre dimensions are disabled on purpose.
+                They read as try-on fit controls, but nothing in the AR path has ever
+                consumed them - the frame is sized from the wearer's measured face, not from
+                the catalogue. Leaving them editable invites someone to fill them in and
+                wait for the try-on to change, which it will not. They stay visible, and any
+                value already stored still round-trips on save, so nothing is lost if they
+                are wired up later. */}
+            <p className="mb-md rounded-xl bg-surface-container-low px-md py-sm text-label-sm text-on-surface-variant">
+              Millimetre dimensions are shown on the product and compare pages only. They do
+              not affect virtual try-on sizing, which is measured from the wearer's face, so
+              they are locked to avoid suggesting otherwise.
+            </p>
             <div className="grid grid-cols-2 gap-md sm:grid-cols-4">
               <div>
                 <label className="mb-xs block text-label-sm text-on-surface-variant">Material</label>
@@ -451,18 +463,21 @@ export default function AdminProductEditPage() {
               </div>
               <div>
                 <label className="mb-xs block text-label-sm text-on-surface-variant">Lens Width (mm)</label>
-                <input type="number" min={0} value={lensWidth} onChange={(e) => setLensWidth(e.target.value)} placeholder="54"
-                  className="w-full rounded-xl border border-outline-variant bg-surface-container-low px-md py-sm outline-none focus:ring-2 focus:ring-primary-container" />
+                <input type="number" min={0} value={lensWidth} disabled readOnly placeholder="54"
+                  title="Catalogue spec only - does not affect try-on sizing"
+                  className="w-full cursor-not-allowed rounded-xl border border-outline-variant bg-surface-container-low px-md py-sm text-on-surface-variant opacity-60 outline-none" />
               </div>
               <div>
                 <label className="mb-xs block text-label-sm text-on-surface-variant">Bridge (mm)</label>
-                <input type="number" min={0} value={bridge} onChange={(e) => setBridge(e.target.value)} placeholder="18"
-                  className="w-full rounded-xl border border-outline-variant bg-surface-container-low px-md py-sm outline-none focus:ring-2 focus:ring-primary-container" />
+                <input type="number" min={0} value={bridge} disabled readOnly placeholder="18"
+                  title="Catalogue spec only - does not affect try-on sizing"
+                  className="w-full cursor-not-allowed rounded-xl border border-outline-variant bg-surface-container-low px-md py-sm text-on-surface-variant opacity-60 outline-none" />
               </div>
               <div>
                 <label className="mb-xs block text-label-sm text-on-surface-variant">Temple (mm)</label>
-                <input type="number" min={0} value={temple} onChange={(e) => setTemple(e.target.value)} placeholder="145"
-                  className="w-full rounded-xl border border-outline-variant bg-surface-container-low px-md py-sm outline-none focus:ring-2 focus:ring-primary-container" />
+                <input type="number" min={0} value={temple} disabled readOnly placeholder="145"
+                  title="Catalogue spec only - does not affect try-on sizing"
+                  className="w-full cursor-not-allowed rounded-xl border border-outline-variant bg-surface-container-low px-md py-sm text-on-surface-variant opacity-60 outline-none" />
               </div>
             </div>
             <div className="mt-md">
