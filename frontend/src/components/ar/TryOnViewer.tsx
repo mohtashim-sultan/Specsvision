@@ -86,13 +86,19 @@ const AR = {
   // The hinge is DETECTED from the model's own geometry, not assumed. These only control
   // the detector: a depth slice counts as arm once its narrowest vertex sits beyond this
   // fraction of the model's half-width (the frame front always has geometry near the
-  // centre line — bridge, lenses — while an arm is two separate rails), and the bend eases
-  // in over this much of the depth so it starts at the hinge rather than snapping on.
+  // centre line — bridge, lenses — while an arm is two separate rails), and the bend then
+  // ramps across the whole arm, so it starts at the hinge rather than snapping on.
   TEMPLE_RAIL_FRACTION: 0.35,
-  TEMPLE_HINGE_EASE: 0.10,
-  // How far below the ear landmark the arm tip is aimed, in world cm, so the arm rests on
-  // the ear rather than hovering at the exact landmark.
-  TEMPLE_EAR_DROP: 0.3,
+  // How far below the ear landmark the arm tip is aimed, in world cm. A hooked temple tip
+  // sits about a centimetre below where the ear meets the head, so aiming AT the landmark
+  // pulls the tip up and flattens the arm's own designed downward angle.
+  TEMPLE_EAR_DROP: 1.0,
+  // Cap on the vertical aim, in world cm. The model already knows what angle its own arms
+  // run at; this only corrects for ears sitting unusually high or low.
+  TEMPLE_AIM_MAX: 0.5,
+  // Arms are solved to reach the ear, then extended by this factor so they carry past it
+  // and hook down behind, as real temples do, instead of stopping level with it.
+  TEMPLE_REACH_K: 1.15,
   SMOOTH: 30,        // pose smoothing (calm, stable pose tracking)
   // cos of the maximum head turn whose landmarks are trusted for face-shape sampling.
   // 0.90 is about 25 degrees of yaw.
@@ -408,7 +414,6 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                 // into it would deform the product, so leave the geometry alone.
                 splayRef.current = { parts: [], halfWidth, tipY: 0, appliedX: -1e9, appliedY: -1e9 };
               } else {
-                const easeEnd = Math.min(1, hinge + AR.TEMPLE_HINGE_EASE);
                 const parts: (typeof splayRef.current)["parts"] = [];
                 let tipSum = 0;
                 let tipN = 0;
@@ -421,7 +426,12 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                   let touched = false;
                   for (let i = 0; i < attr.count; i++) {
                     const t = THREE.MathUtils.clamp((backZ - arr[i * 3 + 2]) / depth, 0, 1);
-                    w[i] = THREE.MathUtils.smoothstep(t, hinge, easeEnd);
+                    // Ramps across the ENTIRE arm, not just past the hinge. Saturating early
+                    // threw the arm 1.4cm outward within a tenth of its length, which reads as
+                    // a sharp elbow - a frame that looks bent rather than worn. A real temple
+                    // flares gradually from hinge to tip, and that also tracks how the skull
+                    // widens toward the ear, so it clears by more rather than less.
+                    w[i] = THREE.MathUtils.smoothstep(t, hinge, 1.0);
                     rootX[i] = arr[i * 3];
                     if (w[i] > 1e-3) touched = true;
                     if (t > 0.92) {
@@ -1197,7 +1207,7 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                 earRg.getWorldPosition(_earR);
                 _earMid.addVectors(_earL, _earR).multiplyScalar(0.5);
 
-                const reach = _tmp.subVectors(_pos, _earMid).dot(_fwd);
+                const reach = _tmp.subVectors(_pos, _earMid).dot(_fwd) * AR.TEMPLE_REACH_K;
                 const nativeArm = rawDepthRef.current * targetScale;
                 if (nativeArm > 1e-6 && reach > 0) {
                   const solved = THREE.MathUtils.clamp(reach / nativeArm, AR.TEMPLE_MIN, AR.TEMPLE_MAX);
@@ -1233,10 +1243,11 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
 
                   // Where the ear sits vertically relative to the frame, in model units.
                   const earUp = _tmp.subVectors(_earMid, _pos).dot(_up) - AR.TEMPLE_EAR_DROP;
+                  const aimCap = AR.TEMPLE_AIM_MAX / targetScale;
                   const wantTipY = THREE.MathUtils.clamp(
                     earUp / targetScale - splay.tipY,
-                    -splay.halfWidth * AR.TEMPLE_SPLAY_MAX,
-                    splay.halfWidth * AR.TEMPLE_SPLAY_MAX,
+                    -aimCap,
+                    aimCap,
                   );
 
                   // Rewriting the arm vertices is cheap but not free, and neither target moves
