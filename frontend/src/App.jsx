@@ -1,5 +1,6 @@
 import React from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
+import ScrollToTop from './components/common/ScrollToTop';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -47,6 +48,7 @@ function AppContent() {
       className={isImmersive ? 'h-[100dvh] overflow-hidden' : 'min-h-screen'}
       style={{ background: 'linear-gradient(to bottom right, var(--bg-page-start), var(--bg-page-end))' }}
     >
+      <ScrollToTop />
       {!isAdmin && <Header />}
       <Routes>
         <Route path="/" element={<Home />} />
