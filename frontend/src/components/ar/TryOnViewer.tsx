@@ -75,12 +75,18 @@ const AR = {
   // than by the solve, so it only looked right by coincidence.
   TEMPLE_MIN: 0.3,
   TEMPLE_MAX: 3.2,
-  // How far outside the skull the temple arms should sit, in world cm. Real arms rest
-  // just proud of the head rather than flush against it.
-  TEMPLE_CLEARANCE: 0.2,
+  // How far outside the head the temple arms sit, in world cm. Enough to clear the skin
+  // plus landmark jitter without the arms visibly standing off the head. Raising this to
+  // ~1.5 would also clear thick hair, at the cost of arms floating on a short-haired user
+  // — there is no hair geometry to measure, so it is one constant either way.
+  TEMPLE_CLEARANCE: 0.6,
   // Cap on outward bend, as a fraction of the model's own half-width, so a bad head
   // measurement can never splay the arms into a wishbone.
-  TEMPLE_SPLAY_MAX: 0.35,
+  TEMPLE_SPLAY_MAX: 0.45,
+  // Where along the model's depth the arm is considered to begin. Everything in front of
+  // HINGE_START is left untouched, so the frame's own width never changes.
+  TEMPLE_HINGE_START: 0.30,
+  TEMPLE_HINGE_END: 0.55,
   SMOOTH: 30,        // pose smoothing (calm, stable pose tracking)
   // cos of the maximum head turn whose landmarks are trusted for face-shape sampling.
   // 0.90 is about 25 degrees of yaw.
@@ -336,9 +342,11 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                 const orig = new Float32Array(attr.array as ArrayLike<number>);
                 const ramp = new Float32Array(attr.count);
                 for (let i = 0; i < attr.count; i++) {
-                  // Normalised distance behind the frame front, 0 at the lens plane, 1 at the tip.
+                  // Normalised distance behind the frame front: 0 at the lens plane, 1 at the tip.
                   const t = THREE.MathUtils.clamp((backZ - orig[i * 3 + 2]) / depth, 0, 1);
-                  ramp[i] = t * t;
+                  // Zero through the frame front, easing to full across the hinge. This is what
+                  // guarantees the frame's own width is never touched — only the arms move.
+                  ramp[i] = THREE.MathUtils.smoothstep(t, AR.TEMPLE_HINGE_START, AR.TEMPLE_HINGE_END);
                   const ax = Math.abs(orig[i * 3]);
                   if (ax > halfWidth) halfWidth = ax;
                 }
@@ -1087,28 +1095,45 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                   templeZRef.current = THREE.MathUtils.lerp(templeZRef.current, solved, k);
                 }
 
-                // ── Bend the arms outward to clear the skull ───────────────
-                // Driven by the measured ear-to-ear width, so a broad head gets more bend and
-                // a narrow one gets none — which is the whole point: the same frame has to sit
-                // correctly on both.
+                // ── Bend the arms outward to clear the head ────────────────
+                // Every arm vertex is pushed out to at least the WIDEST measured half-width of
+                // the head. Targeting the maximum rather than the head's width at each vertex's
+                // own depth is deliberate: the maximum is an upper bound at every depth, so no
+                // part of the arm can be left inside the occluder and get sliced — which is
+                // what a tip-weighted bend did, since it barely moved the middle of the arm and
+                // that is where the skull is already near its widest.
+                //
+                // It scales with the person: measured live, so a broad head gets a large bend
+                // and a narrow one gets none at all. `Math.max(0, ...)` means arms already
+                // outside are never pulled in, and the frame front never moves because its
+                // hinge weight is zero.
                 const splay = splayRef.current;
                 if (splay.parts.length > 0 && targetScale > 1e-6) {
-                  const headHalf = _earL.distanceTo(_earR) * 0.5 + AR.TEMPLE_CLEARANCE;
-                  const armHalf = splay.halfWidth * targetScale;
-                  const wantedModel = THREE.MathUtils.clamp(
-                    (headHalf - armHalf) / targetScale,
-                    0,
-                    splay.halfWidth * AR.TEMPLE_SPLAY_MAX,
+                  const sa2 = shapeAnchorsRef.current;
+                  const cl = sa2?.cheekL?.group;
+                  const cr = sa2?.cheekR?.group;
+                  let headHalf = _earL.distanceTo(_earR) * 0.5;
+                  if (cl?.visible && cr?.visible) {
+                    cl.getWorldPosition(_cheekL);
+                    cr.getWorldPosition(_cheekR);
+                    headHalf = Math.max(headHalf, _cheekL.distanceTo(_cheekR) * 0.5);
+                  }
+                  const targetHalfModel = (headHalf + AR.TEMPLE_CLEARANCE) / targetScale;
+                  const capped = Math.min(
+                    targetHalfModel,
+                    splay.halfWidth * (1 + AR.TEMPLE_SPLAY_MAX),
                   );
-                  // Rewriting 30k vertices is cheap but not free, and the required bend barely
-                  // moves once a face is tracked. Only rebuild on a change worth seeing.
-                  if (Math.abs(wantedModel - splay.applied) > splay.halfWidth * 0.01) {
-                    splay.applied = wantedModel;
+
+                  // Rewriting ~30k vertices is cheap but not free, and the target barely moves
+                  // once a face is tracked. Only rebuild on a change worth seeing.
+                  if (Math.abs(capped - splay.applied) > splay.halfWidth * 0.01) {
+                    splay.applied = capped;
                     for (const part of splay.parts) {
                       const arr = part.attr.array as Float32Array;
                       for (let i = 0; i < part.attr.count; i++) {
                         const x = part.orig[i * 3];
-                        arr[i * 3] = x + Math.sign(x) * wantedModel * part.ramp[i];
+                        const push = Math.max(0, capped - Math.abs(x)) * part.ramp[i];
+                        arr[i * 3] = x + Math.sign(x) * push;
                       }
                       part.attr.needsUpdate = true;
                     }
