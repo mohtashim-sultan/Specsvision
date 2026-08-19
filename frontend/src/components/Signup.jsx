@@ -31,7 +31,8 @@ export default function Signup() {
     setIsLoading(true);
     try {
       await register({ email, password, name });
-      navigate(`/verify-email?email=${encodeURIComponent(email)}`);
+      // Signed in already — same destination as a successful login.
+      navigate('/');
     } catch (err) {
       setError(err.message || 'Signup failed');
     } finally {
