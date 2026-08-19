@@ -488,11 +488,11 @@ export default function VirtualTryOnPage() {
 
             {/* Glassmorphic Settings Drawer (Adjustments) */}
             {showAdjust && (
-              <div className="glass-chrome fixed md:absolute bottom-0 left-0 right-0 md:left-4 md:top-4 md:bottom-4 z-30 md:z-20 w-full md:w-[340px] h-[50dvh] md:h-auto rounded-t-[32px] md:rounded-3xl px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:pb-5 shadow-[0_-10px_40px_rgba(0,0,0,0.85)] md:shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom md:slide-in-from-left-5 duration-300 md:duration-200">
+              <div className="glass-chrome fixed md:absolute bottom-0 left-0 right-0 md:left-4 md:top-4 md:bottom-4 z-30 md:z-20 w-full md:w-[340px] max-h-[44dvh] md:max-h-none rounded-t-3xl md:rounded-3xl px-4 pt-2 md:pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:pb-5 shadow-[0_-10px_40px_rgba(0,0,0,0.85)] md:shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom md:slide-in-from-left-5 duration-300 md:duration-200">
                 {/* Grab bar for mobile bottom sheet */}
-                <div className="w-12 h-1 bg-slate-850 rounded-full mx-auto mb-3.5 md:hidden shrink-0" />
+                <div className="w-10 h-1 bg-slate-850 rounded-full mx-auto mb-2 md:hidden shrink-0" />
 
-                <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 shrink-0">
+                <div className="flex items-center justify-between pb-2 md:pb-3 border-b border-slate-800/80 shrink-0">
                   <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-purple-400">
                     <MaterialIcon name="tune" className="!text-base" />
                     Virtual Fit Adjustments
@@ -507,7 +507,7 @@ export default function VirtualTryOnPage() {
                 </div>
 
                 {/* Adjustment Tabs */}
-                <div className="grid grid-cols-3 gap-1 my-3 bg-slate-900/60 p-1 rounded-2xl shrink-0 border border-slate-800/50">
+                <div className="grid grid-cols-3 gap-1 my-2 md:my-3 bg-slate-900/60 p-1 rounded-2xl shrink-0 border border-slate-800/50">
                   {(["position", "rotation", "scale"] as const).map((tab) => (
                     <button
                       key={tab}
@@ -839,7 +839,7 @@ export default function VirtualTryOnPage() {
                 </div>
 
                 {/* Calibration Presets — always visible regardless of active tab */}
-                <div className="shrink-0 pt-3 border-t border-slate-800/60 mt-1">
+                <div className="shrink-0 pt-2 md:pt-3 border-t border-slate-800/60 mt-1">
                   <h4 className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-2 tryon-section-title">Quick Presets</h4>
                   <div className="grid grid-cols-4 gap-1.5">
                     {([
