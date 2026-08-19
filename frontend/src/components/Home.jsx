@@ -31,9 +31,9 @@ export default function Home() {
         }));
         if (!cancelled) setProducts(mapped.slice(0, 4));
       } catch (err) {
-        // The hero falls back to the static image and the stats to zero, which is
-        // honest: nothing was loaded. No error banner on the landing page — a retry is
-        // one navigation away in the shop.
+        // The featured grid simply stays empty. No error banner on the landing page —
+        // the hero and stats are static, so there is nothing broken to report, and a
+        // retry is one navigation away in the shop.
         console.error("Failed to load featured products:", err);
       }
     })();
