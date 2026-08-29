@@ -42,20 +42,6 @@ class TokenWithRole(Token):
     role: Literal["user", "admin"]
 
 
-class SignupResponse(BaseModel):
-    message: str
-    email: str
-
-
-class VerifyEmailRequest(BaseModel):
-    email: EmailStr
-    otp: str = Field(min_length=6, max_length=6)
-
-
-class ResendOtpRequest(BaseModel):
-    email: EmailStr
-
-
 class ProductColor(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     hex: str = Field(pattern=r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")

@@ -33,12 +33,12 @@ interface Adjustments {
 // to 0.82, which shrank the composited feed and left black bars on every screen — worst on
 // phones, where it pushed the face into a small box. faceStretch 1.0 keeps the feed
 // undistorted; both remain user-adjustable.
-const BASELINE: Adjustments = { scale: 0.87, templeLength: 1.0, faceStretch: 1.0, zoom: 1.0, x: 0.0, y: 0.0, z: 0.0, rx: 0.0, ry: 0.0, rz: 0.0 };
+const BASELINE: Adjustments = { scale: 0.82, templeLength: 1.0, faceStretch: 1.0, zoom: 1.0, x: 0.0, y: 0.0, z: 0.0, rx: 0.0, ry: 0.0, rz: 0.0 };
 const DEFAULT_ADJUSTMENTS: Record<string, Adjustments> = {
   default:  { ...BASELINE },
   wayfarer: { ...BASELINE },
-  aviator:  { ...BASELINE, scale: 1.02 },
-  cateye:   { ...BASELINE, scale: 0.98 },
+  aviator:  { ...BASELINE, scale: 0.97 },
+  cateye:   { ...BASELINE, scale: 0.93 },
   round:    { ...BASELINE },
   oval:     { ...BASELINE },
 };
@@ -72,6 +72,10 @@ export default function VirtualTryOnPage() {
   const [selectedCategory,   setSelectedCategory]   = useState<string>("All");
   const [arStatus,           setArStatus]           = useState<TryOnStatus>("loading");
   const [detectedShape,      setDetectedShape]      = useState<FaceShape | null>(null);
+  // On a phone the info cards blanketed roughly 40% of the camera view — including the
+  // face they describe. They start collapsed to chips there and expand on tap; on
+  // desktop there is room, so they are always open.
+  const [infoOpen,           setInfoOpen]           = useState(false);
   const [hasConsent,         setHasConsent]         = useState(() =>
     localStorage.getItem("specsvision_cam_consent") === "true",
   );
@@ -121,7 +125,7 @@ export default function VirtualTryOnPage() {
   useEffect(() => {
     if (selectedId === null) return;
     const getInitialAdjustments = (): Adjustments => {
-      const saved = localStorage.getItem(`specsvision_adj_v14_${selectedId}`);
+      const saved = localStorage.getItem(`specsvision_adj_v15_${selectedId}`);
       if (saved) {
         try {
           return JSON.parse(saved);
@@ -203,7 +207,7 @@ export default function VirtualTryOnPage() {
     setAdjustments((prev) => {
       const next = { ...prev, [key]: value };
       if (selectedId !== null) {
-        localStorage.setItem(`specsvision_adj_v14_${selectedId}`, JSON.stringify(next));
+        localStorage.setItem(`specsvision_adj_v15_${selectedId}`, JSON.stringify(next));
       }
       return next;
     });
@@ -241,7 +245,7 @@ export default function VirtualTryOnPage() {
     setAdjustments(next);
     setActivePreset(presetType);
     if (selectedId !== null) {
-      localStorage.setItem(`specsvision_adj_v14_${selectedId}`, JSON.stringify(next));
+      localStorage.setItem(`specsvision_adj_v15_${selectedId}`, JSON.stringify(next));
     }
     toast.success(`Preset "${presetType}" applied!`);
   };
@@ -253,7 +257,7 @@ export default function VirtualTryOnPage() {
     setAdjustments(next);
     setActivePreset(null);
     if (selectedId !== null) {
-      localStorage.removeItem(`specsvision_adj_v14_${selectedId}`);
+      localStorage.removeItem(`specsvision_adj_v15_${selectedId}`);
     }
     toast.success("Adjustments reset to defaults!");
   };
@@ -396,39 +400,71 @@ export default function VirtualTryOnPage() {
               </div>
             )}
 
-            {/* Info overlays — a flow-stacked column so cards can never collide, and capped
-                against the viewport width so they don't blanket the face on small phones.
-                (The face-shape card used to be pinned at a hard-coded top-[104px], which
-                overlapped whenever the product name wrapped to two lines.) */}
-            <div className="pointer-events-none absolute left-2.5 top-2.5 sm:left-4 sm:top-4 z-10 flex max-w-[52vw] flex-col gap-2 sm:max-w-[240px]">
-              <div className="rounded-2xl border border-white/10 bg-black/60 px-3 py-2 backdrop-blur-md shadow-xl sm:px-4 sm:py-3">
-                <span className="block text-[9px] font-bold uppercase tracking-widest text-purple-400">Now Trying</span>
-                <h2 className="mt-0.5 truncate text-xs font-bold text-white leading-tight sm:text-sm">
+            {/* Info overlays.
+                Phone: a row of compact chips, tappable to reveal the full cards. Desktop:
+                the cards themselves, since there is width to spare. The camera view is the
+                product here — covering the user's face with metadata about the frame they
+                are trying to see on that face defeats the point. */}
+            <div className="absolute left-2.5 top-2.5 z-10 flex max-w-[70vw] flex-col gap-2 sm:left-4 sm:top-4 sm:max-w-[240px]">
+              {/* Collapsed chips — small screens only, and only while collapsed. */}
+              <button
+                type="button"
+                onClick={() => setInfoOpen((o) => !o)}
+                aria-expanded={infoOpen}
+                className={`flex items-center gap-1.5 self-start rounded-full border border-white/10 bg-black/60 px-3 py-1.5 backdrop-blur-md shadow-lg active:scale-95 sm:hidden ${infoOpen ? "hidden" : ""}`}
+              >
+                <MaterialIcon name="visibility" className="!text-sm text-purple-300" />
+                <span className="max-w-[38vw] truncate text-[10px] font-bold text-white">
                   {selected?.name ?? "Select a frame"}
-                </h2>
-                {selected && (
-                  <p className="mt-0.5 text-[10px] text-slate-400 truncate">
-                    {selected.category} · {formatPrice(selected.price)}
-                  </p>
+                </span>
+                {detectedShape && (
+                  <span className="rounded-full bg-purple-500/25 px-1.5 py-0.5 text-[9px] font-bold text-purple-200">
+                    {detectedShape}
+                  </span>
                 )}
-              </div>
+                <MaterialIcon name="expand_more" className="!text-sm text-slate-400" />
+              </button>
 
-              {/* Detected face shape + fit guidance. The blurb is desktop-only — on a phone
-                  the card would otherwise cover a third of the camera view. */}
-              {detectedShape && (
-                <div className="rounded-2xl border border-purple-400/20 bg-black/60 px-3 py-2 backdrop-blur-md shadow-xl animate-in fade-in slide-in-from-left-3 duration-300 sm:px-4 sm:py-3">
-                  <div className="flex items-center gap-1.5">
-                    <MaterialIcon name="face" className="!text-sm text-purple-300" />
-                    <span className="text-[9px] font-bold uppercase tracking-widest text-purple-400">Face Shape</span>
-                  </div>
-                  <p className="mt-0.5 text-xs font-bold text-white leading-tight sm:text-sm">{detectedShape}</p>
-                  <p className="mt-1 hidden text-[10px] text-slate-300 leading-snug sm:block">{SHAPE_GUIDE[detectedShape].blurb}</p>
-                  <p className="mt-1 text-[10px] leading-snug text-slate-400 sm:mt-1.5">
-                    <span className="text-purple-300 font-semibold">Best fit:</span>{" "}
-                    {SHAPE_GUIDE[detectedShape].recommend.slice(0, 3).join(", ")}
-                  </p>
+              {/* Full cards — always on desktop, on phones only once expanded. */}
+              <div className={`${infoOpen ? "flex" : "hidden"} flex-col gap-2 sm:flex`}>
+                <div className="pointer-events-none rounded-2xl border border-white/10 bg-black/60 px-3 py-2 backdrop-blur-md shadow-xl sm:px-4 sm:py-3">
+                  <span className="block text-[9px] font-bold uppercase tracking-widest text-purple-400">Now Trying</span>
+                  <h2 className="mt-0.5 truncate text-xs font-bold text-white leading-tight sm:text-sm">
+                    {selected?.name ?? "Select a frame"}
+                  </h2>
+                  {selected && (
+                    <p className="mt-0.5 text-[10px] text-slate-400 truncate">
+                      {selected.category} · {formatPrice(selected.price)}
+                    </p>
+                  )}
                 </div>
-              )}
+
+                {/* Detected face shape + fit guidance. The blurb is desktop-only — on a phone
+                    the card would otherwise cover a third of the camera view. */}
+                {detectedShape && (
+                  <div className="pointer-events-none rounded-2xl border border-purple-400/20 bg-black/60 px-3 py-2 backdrop-blur-md shadow-xl animate-in fade-in slide-in-from-left-3 duration-300 sm:px-4 sm:py-3">
+                    <div className="flex items-center gap-1.5">
+                      <MaterialIcon name="face" className="!text-sm text-purple-300" />
+                      <span className="text-[9px] font-bold uppercase tracking-widest text-purple-400">Face Shape</span>
+                    </div>
+                    <p className="mt-0.5 text-xs font-bold text-white leading-tight sm:text-sm">{detectedShape}</p>
+                    <p className="mt-1 hidden text-[10px] text-slate-300 leading-snug sm:block">{SHAPE_GUIDE[detectedShape].blurb}</p>
+                    <p className="mt-1 text-[10px] leading-snug text-slate-400 sm:mt-1.5">
+                      <span className="text-purple-300 font-semibold">Best fit:</span>{" "}
+                      {SHAPE_GUIDE[detectedShape].recommend.slice(0, 3).join(", ")}
+                    </p>
+                  </div>
+                )}
+
+                {/* Collapse control, phones only. */}
+                <button
+                  type="button"
+                  onClick={() => setInfoOpen(false)}
+                  className="self-start rounded-full border border-white/10 bg-black/60 px-3 py-1 text-[10px] font-semibold text-slate-300 backdrop-blur-md active:scale-95 sm:hidden"
+                >
+                  Hide
+                </button>
+              </div>
             </div>
 
             {/* Status Pills */}
@@ -452,11 +488,11 @@ export default function VirtualTryOnPage() {
 
             {/* Glassmorphic Settings Drawer (Adjustments) */}
             {showAdjust && (
-              <div className="glass-chrome fixed md:absolute bottom-0 left-0 right-0 md:left-4 md:top-4 md:bottom-4 z-30 md:z-20 w-full md:w-[340px] h-[50dvh] md:h-auto rounded-t-[32px] md:rounded-3xl px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:pb-5 shadow-[0_-10px_40px_rgba(0,0,0,0.85)] md:shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom md:slide-in-from-left-5 duration-300 md:duration-200">
+              <div className="glass-chrome fixed md:absolute bottom-0 left-0 right-0 md:left-4 md:top-4 md:bottom-4 z-30 md:z-20 w-full md:w-[340px] max-h-[52dvh] md:max-h-none rounded-t-3xl md:rounded-3xl px-4 pt-2 md:pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:pb-5 shadow-[0_-10px_40px_rgba(0,0,0,0.85)] md:shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom md:slide-in-from-left-5 duration-300 md:duration-200">
                 {/* Grab bar for mobile bottom sheet */}
-                <div className="w-12 h-1 bg-slate-850 rounded-full mx-auto mb-3.5 md:hidden shrink-0" />
+                <div className="w-10 h-1 bg-slate-850 rounded-full mx-auto mb-2 md:hidden shrink-0" />
 
-                <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 shrink-0">
+                <div className="flex items-center justify-between pb-2 md:pb-3 border-b border-slate-800/80 shrink-0">
                   <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-purple-400">
                     <MaterialIcon name="tune" className="!text-base" />
                     Virtual Fit Adjustments
@@ -471,7 +507,7 @@ export default function VirtualTryOnPage() {
                 </div>
 
                 {/* Adjustment Tabs */}
-                <div className="grid grid-cols-3 gap-1 my-3 bg-slate-900/60 p-1 rounded-2xl shrink-0 border border-slate-800/50">
+                <div className="grid grid-cols-3 gap-1 my-2 md:my-3 bg-slate-900/60 p-1 rounded-2xl shrink-0 border border-slate-800/50">
                   {(["position", "rotation", "scale"] as const).map((tab) => (
                     <button
                       key={tab}
@@ -494,7 +530,7 @@ export default function VirtualTryOnPage() {
                     <>
                       {/* Position Y: Height (Up / Down) */}
                       <div>
-                        <div className="flex justify-between mb-1.5">
+                        <div className="flex justify-between mb-1 md:mb-1.5">
                           <span className="text-slate-300 font-medium">Height (Up / Down)</span>
                           <span className="text-purple-400 font-bold font-mono">
                             {adjustments.y > activeBase.y ? "+" : ""}
@@ -509,7 +545,7 @@ export default function VirtualTryOnPage() {
                             step="0.001"
                             value={adjustments.y}
                             onChange={(e) => updateAdjustment("y", parseFloat(e.target.value))}
-                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                            className="flex-1 h-2 md:h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg touch-manipulation"
                           />
                           <button
                             type="button"
@@ -525,7 +561,7 @@ export default function VirtualTryOnPage() {
 
                       {/* Position Z: Depth (In / Out) */}
                       <div>
-                        <div className="flex justify-between mb-1.5">
+                        <div className="flex justify-between mb-1 md:mb-1.5">
                           <span className="text-slate-300 font-medium">Depth (In / Out)</span>
                           <span className="text-purple-400 font-bold font-mono">
                             {adjustments.z > activeBase.z ? "+" : ""}
@@ -540,7 +576,7 @@ export default function VirtualTryOnPage() {
                             step="0.001"
                             value={adjustments.z}
                             onChange={(e) => updateAdjustment("z", parseFloat(e.target.value))}
-                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                            className="flex-1 h-2 md:h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg touch-manipulation"
                           />
                           <button
                             type="button"
@@ -556,7 +592,7 @@ export default function VirtualTryOnPage() {
 
                       {/* Position X: Centering (Left / Right) */}
                       <div>
-                        <div className="flex justify-between mb-1.5">
+                        <div className="flex justify-between mb-1 md:mb-1.5">
                           <span className="text-slate-300 font-medium">Centering (Left / Right)</span>
                           <span className="text-purple-400 font-bold font-mono">
                             {adjustments.x > activeBase.x ? "+" : ""}
@@ -571,7 +607,7 @@ export default function VirtualTryOnPage() {
                             step="0.001"
                             value={adjustments.x}
                             onChange={(e) => updateAdjustment("x", parseFloat(e.target.value))}
-                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                            className="flex-1 h-2 md:h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg touch-manipulation"
                           />
                           <button
                             type="button"
@@ -589,7 +625,7 @@ export default function VirtualTryOnPage() {
                     <>
                       {/* Pitch: Tilt Up / Down */}
                       <div>
-                        <div className="flex justify-between mb-1.5">
+                        <div className="flex justify-between mb-1 md:mb-1.5">
                           <span className="text-slate-300 font-medium">Tilt (Pitch)</span>
                           <span className="text-purple-400 font-bold font-mono">
                             {adjustments.rx > activeBase.rx ? "+" : ""}
@@ -604,7 +640,7 @@ export default function VirtualTryOnPage() {
                             step="0.5"
                             value={adjustments.rx}
                             onChange={(e) => updateAdjustment("rx", parseFloat(e.target.value))}
-                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                            className="flex-1 h-2 md:h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg touch-manipulation"
                           />
                           <button
                             type="button"
@@ -620,7 +656,7 @@ export default function VirtualTryOnPage() {
 
                       {/* Yaw: Turn Left / Right */}
                       <div>
-                        <div className="flex justify-between mb-1.5">
+                        <div className="flex justify-between mb-1 md:mb-1.5">
                           <span className="text-slate-300 font-medium">Turn (Yaw)</span>
                           <span className="text-purple-400 font-bold font-mono">
                             {adjustments.ry > activeBase.ry ? "+" : ""}
@@ -635,7 +671,7 @@ export default function VirtualTryOnPage() {
                             step="0.5"
                             value={adjustments.ry}
                             onChange={(e) => updateAdjustment("ry", parseFloat(e.target.value))}
-                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                            className="flex-1 h-2 md:h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg touch-manipulation"
                           />
                           <button
                             type="button"
@@ -649,7 +685,7 @@ export default function VirtualTryOnPage() {
 
                       {/* Roll: Slant Clockwise / Counter */}
                       <div>
-                        <div className="flex justify-between mb-1.5">
+                        <div className="flex justify-between mb-1 md:mb-1.5">
                           <span className="text-slate-300 font-medium">Slant (Roll)</span>
                           <span className="text-purple-400 font-bold font-mono">
                             {adjustments.rz > activeBase.rz ? "+" : ""}
@@ -664,7 +700,7 @@ export default function VirtualTryOnPage() {
                             step="0.5"
                             value={adjustments.rz}
                             onChange={(e) => updateAdjustment("rz", parseFloat(e.target.value))}
-                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                            className="flex-1 h-2 md:h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg touch-manipulation"
                           />
                           <button
                             type="button"
@@ -681,8 +717,8 @@ export default function VirtualTryOnPage() {
                   {adjustTab === "scale" && (
                     <>
                       {/* Scale: Size multiplier */}
-                      <div className="pb-3 border-b border-slate-800/80">
-                        <div className="flex justify-between mb-1.5">
+                      <div className="pb-2 md:pb-3 border-b border-slate-800/80">
+                        <div className="flex justify-between mb-1 md:mb-1.5">
                           <span className="text-slate-300 font-medium">Frame Size</span>
                           <span className="text-purple-400 font-bold font-mono">
                             {Math.round(adjustments.scale * 100)}%
@@ -696,7 +732,7 @@ export default function VirtualTryOnPage() {
                             step="0.01"
                             value={adjustments.scale}
                             onChange={(e) => updateAdjustment("scale", parseFloat(e.target.value))}
-                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                            className="flex-1 h-2 md:h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg touch-manipulation"
                           />
                           <button
                             type="button"
@@ -711,8 +747,8 @@ export default function VirtualTryOnPage() {
                       </div>
 
                       {/* Temple Length: Arm depth multiplier */}
-                      <div className="pb-3 border-b border-slate-800/80 mt-4">
-                        <div className="flex justify-between mb-1.5">
+                      <div className="pb-2 md:pb-3 border-b border-slate-800/80 mt-2.5 md:mt-4">
+                        <div className="flex justify-between mb-1 md:mb-1.5">
                           <span className="text-slate-300 font-medium">Temple Length (Arms)</span>
                           <span className="text-purple-400 font-bold font-mono">
                             {Math.round(adjustments.templeLength * 100)}%
@@ -726,7 +762,7 @@ export default function VirtualTryOnPage() {
                             step="0.01"
                             value={adjustments.templeLength}
                             onChange={(e) => updateAdjustment("templeLength", parseFloat(e.target.value))}
-                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                            className="flex-1 h-2 md:h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg touch-manipulation"
                           />
                           <button
                             type="button"
@@ -741,8 +777,8 @@ export default function VirtualTryOnPage() {
                       </div>
 
                       {/* Camera Zoom: shrinks the whole feed so the face looks smaller */}
-                      <div className="pb-3 border-b border-slate-800/80 mt-4">
-                        <div className="flex justify-between mb-1.5">
+                      <div className="pb-2 md:pb-3 border-b border-slate-800/80 mt-2.5 md:mt-4">
+                        <div className="flex justify-between mb-1 md:mb-1.5">
                           <span className="text-slate-300 font-medium">Camera Zoom</span>
                           <span className="text-purple-400 font-bold font-mono">
                             {Math.round(adjustments.zoom * 100)}%
@@ -756,7 +792,7 @@ export default function VirtualTryOnPage() {
                             step="0.01"
                             value={adjustments.zoom}
                             onChange={(e) => updateAdjustment("zoom", parseFloat(e.target.value))}
-                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                            className="flex-1 h-2 md:h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg touch-manipulation"
                           />
                           <button
                             type="button"
@@ -770,8 +806,8 @@ export default function VirtualTryOnPage() {
                       </div>
 
                       {/* Face Shape Stretch: Y-axis vertical beauty scaler */}
-                      <div className="pb-3 border-b border-slate-800/80 mt-4">
-                        <div className="flex justify-between mb-1.5">
+                      <div className="pb-2 md:pb-3 border-b border-slate-800/80 mt-2.5 md:mt-4">
+                        <div className="flex justify-between mb-1 md:mb-1.5">
                           <span className="text-slate-300 font-medium">Camera Face Stretch</span>
                           <span className="text-purple-400 font-bold font-mono">
                             {Math.round(adjustments.faceStretch * 100)}%
@@ -785,7 +821,7 @@ export default function VirtualTryOnPage() {
                             step="0.005"
                             value={adjustments.faceStretch}
                             onChange={(e) => updateAdjustment("faceStretch", parseFloat(e.target.value))}
-                            className="flex-1 h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg"
+                            className="flex-1 h-2 md:h-1 accent-purple-500 cursor-pointer bg-slate-800 rounded-lg touch-manipulation"
                           />
                           <button
                             type="button"
@@ -800,36 +836,40 @@ export default function VirtualTryOnPage() {
                       </div>
                     </>
                   )}
-                </div>
 
-                {/* Calibration Presets — always visible regardless of active tab */}
-                <div className="shrink-0 pt-3 border-t border-slate-800/60 mt-1">
-                  <h4 className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-2 tryon-section-title">Quick Presets</h4>
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {([
-                      { id: "nose-lift",  label: "Nose\nLift",    icon: "arrow_upward" },
-                      { id: "nose-lower", label: "Nose\nDrop",    icon: "arrow_downward" },
-                      { id: "wide",       label: "Wide\nFace",    icon: "open_in_full" },
-                      { id: "narrow",     label: "Narrow\nFace",  icon: "close_fullscreen" },
-                    ] as const).map(({ id, label, icon }) => {
-                      const isActive = activePreset === id;
-                      return (
-                        <button
-                          key={id}
-                          type="button"
-                          onClick={() => applyPreset(id)}
-                          className={`quick-preset-btn relative flex flex-col items-center gap-1 rounded-2xl border p-2 transition-all active:scale-95 ${
-                            isActive ? "active" : ""
-                          }`}
-                        >
-                          {isActive && (
-                            <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-purple-500 shadow-[0_0_4px_rgba(168,85,247,0.8)]" />
-                          )}
-                          <span className="material-symbols-outlined text-base leading-none preset-icon">{icon}</span>
-                          <span className="text-center text-[8px] font-bold leading-tight whitespace-pre-line preset-label">{label}</span>
-                        </button>
-                      );
-                    })}
+                  {/* Quick Presets. Inside the scroll area on purpose: as a pinned block
+                      it held 86px of the sheet permanently -- 24% of a 44dvh sheet on a
+                      phone -- even on a tab where nobody was reaching for it, and that
+                      came straight out of the space the sliders had to share.
+                      Still shown on every tab, as before. */}
+                  <div className="pt-3 border-t border-slate-800/60 mt-1">
+                    <h4 className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-2 tryon-section-title">Quick Presets</h4>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {([
+                        { id: "nose-lift",  label: "Nose\nLift",    icon: "arrow_upward" },
+                        { id: "nose-lower", label: "Nose\nDrop",    icon: "arrow_downward" },
+                        { id: "wide",       label: "Wide\nFace",    icon: "open_in_full" },
+                        { id: "narrow",     label: "Narrow\nFace",  icon: "close_fullscreen" },
+                      ] as const).map(({ id, label, icon }) => {
+                        const isActive = activePreset === id;
+                        return (
+                          <button
+                            key={id}
+                            type="button"
+                            onClick={() => applyPreset(id)}
+                            className={`quick-preset-btn relative flex flex-col items-center gap-1 rounded-2xl border p-2 transition-all active:scale-95 ${
+                              isActive ? "active" : ""
+                            }`}
+                          >
+                            {isActive && (
+                              <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-purple-500 shadow-[0_0_4px_rgba(168,85,247,0.8)]" />
+                            )}
+                            <span className="material-symbols-outlined text-base leading-none preset-icon">{icon}</span>
+                            <span className="text-center text-[8px] font-bold leading-tight whitespace-pre-line preset-label">{label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
 

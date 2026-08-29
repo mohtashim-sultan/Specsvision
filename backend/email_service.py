@@ -1,13 +1,15 @@
 """
 Email service — powered by the Resend HTTP API (https://resend.com).
 
-Two transactional email templates:
-  • send_otp_email        — 6-digit OTP for account verification
+One transactional email template:
   • send_order_confirmation_email — rich order summary on checkout
 
-Both functions fire-and-forget inside a ThreadPoolExecutor so they never
-block the FastAPI event loop. A failed email does NOT abort the calling
-request; errors are logged to stderr only.
+(An OTP verification email lived here until email verification was removed
+from signup.)
+
+It fires and forgets on a daemon thread so it never blocks the FastAPI event
+loop. A failed email does NOT abort the calling request; errors are logged to
+stderr only.
 """
 from __future__ import annotations
 
@@ -54,107 +56,6 @@ def _post_resend(payload: dict[str, Any]) -> None:
 def _send_async(payload: dict[str, Any]) -> None:
     """Dispatch email in a daemon thread — never blocks the event loop."""
     threading.Thread(target=_post_resend, args=(payload,), daemon=True).start()
-
-
-# ── OTP verification email ─────────────────────────────────────────────────────
-
-_OTP_HTML = """\
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Verify your SpecsVision account</title>
-</head>
-<body style="margin:0;padding:0;background:#f4f4f7;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" role="presentation"
-         style="background:#f4f4f7;padding:40px 0;">
-    <tr>
-      <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" role="presentation"
-               style="max-width:600px;width:100%;">
-
-          <!-- Header -->
-          <tr>
-            <td style="background:linear-gradient(135deg,#7c3aed 0%,#db2777 100%);
-                       border-radius:16px 16px 0 0;padding:36px 40px;text-align:center;">
-              <h1 style="margin:0;color:#fff;font-size:28px;font-weight:700;
-                         letter-spacing:-0.5px;">SpecsVision</h1>
-              <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:14px;">
-                Premium Eyewear — Virtual Try-On
-              </p>
-            </td>
-          </tr>
-
-          <!-- Body -->
-          <tr>
-            <td style="background:#ffffff;padding:44px 40px;">
-              <p style="margin:0 0 8px;font-size:16px;color:#374151;">
-                Hi {name},
-              </p>
-              <p style="margin:0 0 28px;font-size:16px;color:#6b7280;line-height:1.6;">
-                Welcome to SpecsVision! Use the verification code below to confirm
-                your email address. The code expires in <strong>10 minutes</strong>.
-              </p>
-
-              <!-- OTP block -->
-              <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
-                <tr>
-                  <td align="center">
-                    <div style="display:inline-block;background:#f5f3ff;
-                                border:2px solid #7c3aed;border-radius:12px;
-                                padding:20px 40px;margin:0 auto;">
-                      <p style="margin:0;font-size:11px;color:#7c3aed;
-                                font-weight:600;letter-spacing:2px;
-                                text-transform:uppercase;">Verification Code</p>
-                      <p style="margin:8px 0 0;font-size:44px;font-weight:800;
-                                letter-spacing:10px;color:#4c1d95;
-                                font-family:'Courier New',monospace;">{otp}</p>
-                    </div>
-                  </td>
-                </tr>
-              </table>
-
-              <p style="margin:32px 0 0;font-size:13px;color:#9ca3af;line-height:1.6;">
-                If you did not create a SpecsVision account, you can safely ignore
-                this email. This code will expire automatically.
-              </p>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="background:#f9fafb;border-radius:0 0 16px 16px;
-                       padding:24px 40px;text-align:center;
-                       border-top:1px solid #e5e7eb;">
-              <p style="margin:0;font-size:12px;color:#9ca3af;">
-                © 2025 SpecsVision. All rights reserved.
-              </p>
-            </td>
-          </tr>
-
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-"""
-
-
-def send_otp_email(to: str, name: str, otp: str) -> None:
-    """Send a 6-digit OTP verification email (non-blocking)."""
-    print(f"\n==========================================")
-    print(f"  [SpecsVision Auth] OTP CODE FOR {to}: {otp}")
-    print(f"==========================================\n")
-    display_name = name or to.split("@")[0]
-    html = _OTP_HTML.replace("{name}", display_name).replace("{otp}", otp)
-    _send_async({
-        "from": settings.email_from,
-        "to": [to],
-        "subject": f"{otp} is your SpecsVision verification code",
-        "html": html,
-    })
 
 
 # ── Order confirmation email ───────────────────────────────────────────────────

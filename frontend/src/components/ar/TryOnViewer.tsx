@@ -9,7 +9,13 @@ import React, {
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment";
-import { FACE_SHAPE_LANDMARKS, classifyFaceShape, type FaceShape } from "./faceShape";
+import {
+  FACE_SHAPE_LANDMARKS,
+  FaceShapeStabilizer,
+  SHAPE_FIT,
+  faceRatios,
+  type FaceShape,
+} from "./faceShape";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -60,13 +66,108 @@ const CAMERA_FILTER = "contrast(1.08) saturate(1.14) brightness(1.03)";
 // tilt. These constants are the knobs to dial from screenshots — all are fractions of the
 // inter-eye-corner distance (so they're distance-invariant) unless noted.
 const AR = {
-  SCALE_K: 2.15,     // frame width ÷ eye-corner distance (bigger = larger glasses)
+  SCALE_K: 1.95,     // frame width ÷ eye-corner distance (bigger = larger glasses)
   SEAT_DOWN: 0.03,   // seat relative to nose bridge anchor (+ = down toward nose)
   SEAT_FWD: 0.08,    // push forward off the face so lenses clear the brow (+ = toward camera)
   FWD_SIGN: 1,       // flip to -1 if the glasses render facing away from the camera
-  TEMPLE_MIN: 0.6,   // clamp range for the auto arm-length stretch
+  // Clamp range for the auto arm-length stretch. The lower bound used to be 0.6, which
+  // was BINDING on a typical model — the arm length was being set by the clamp rather
+  // than by the solve, so it only looked right by coincidence.
+  TEMPLE_MIN: 0.3,
   TEMPLE_MAX: 3.2,
-  SMOOTH: 30,        // pose smoothing (calm, stable pose tracking)
+  // How far outside the head the temple arms sit, in world cm. Enough to clear the skin
+  // plus landmark jitter without the arms visibly standing off the head. Raising this to
+  // ~1.5 would also clear thick hair, at the cost of arms floating on a short-haired user
+  // — there is no hair geometry to measure, so it is one constant either way.
+  TEMPLE_CLEARANCE: 0.6,
+  // Maximum outward angle at the hinge, in degrees. Real eyewear temples splay roughly
+  // 5-15 degrees, so this stays inside what a frame is actually built with.
+  TEMPLE_SPLAY_MAX_DEG: 16,
+  // Depth over which the rotation eases in, as a fraction of the model. Kept short: it
+  // is the hinge, not a bend. Long enough only to avoid tearing a mesh whose triangles
+  // straddle the joint.
+  TEMPLE_HINGE_FILLET: 0.05,
+  // Strength of the outward flare, 0 = off.
+  //
+  // An arm at its modelled width runs inside the skull for its last 40% and is correctly
+  // hidden there, which reads as the temple being too short. This angles it outward so
+  // more of its length stays clear of the head.
+  //
+  // It is a RIGID ROTATION about the hinge, not a per-vertex displacement. An earlier
+  // version pushed each vertex sideways by an amount that varied along the arm, which
+  // bent it -- the frame looked broken rather than worn. Rotating the whole arm about
+  // its joint preserves every vertex's position relative to every other, so a straight
+  // temple stays straight and only its direction changes. That is what a hinge does.
+  TEMPLE_SPLAY_STRENGTH: 1,
+  // Cap on outward bend, as a fraction of the model's own half-width, so a bad head
+  // measurement can never splay the arms into a wishbone.
+  TEMPLE_SPLAY_MAX: 0.45,
+  // The hinge is DETECTED from the model's own geometry, not assumed. These only control
+  // the detector: a depth slice counts as arm once its narrowest vertex sits beyond this
+  // fraction of the model's half-width (the frame front always has geometry near the
+  // centre line — bridge, lenses — while an arm is two separate rails), and the bend then
+  // ramps across the whole arm, so it starts at the hinge rather than snapping on.
+  TEMPLE_RAIL_FRACTION: 0.35,
+  // How far below the ear landmark the arm tip is aimed, in world cm. A hooked temple tip
+  // sits about a centimetre below where the ear meets the head, so aiming AT the landmark
+  // pulls the tip up and flattens the arm's own designed downward angle.
+  TEMPLE_EAR_DROP: 1.0,
+  // Cap on the vertical aim, in world cm. The model already knows what angle its own arms
+  // run at; this only corrects for ears sitting unusually high or low.
+  TEMPLE_AIM_MAX: 0.5,
+  // Arms are solved to reach the ear, then extended by this factor so they carry past it
+  // and hook down behind, as real temples do, instead of stopping level with it.
+  //
+  // Capped at 1.05 rather than more: MindAR's face mesh ends at the ears, so there is no
+  // occluder behind them. An arm extended much further re-emerges past the mesh as a
+  // floating fragment behind the head, disconnected from the part the skull is hiding.
+  // With the flare off the arm is hidden from ~60% of its length anyway, so apparent
+  // length now comes from occluding it correctly rather than from stretching it.
+  TEMPLE_REACH_K: 1.05,
+  SMOOTH: 30,        // general-purpose smoothing rate for derived quantities
+
+  // Placement smoothing rates, as exponential time constants (lag = 1000/rate ms).
+  //
+  // These replace a deadband-plus-adaptive-rate scheme whose thresholds sat exactly at
+  // the landmark noise floor: 1% landmark noise produces 0.57 degrees of basis rotation,
+  // against a 0.40 degree freeze threshold and a 0.46 degree rate switch. The frame held
+  // still, then snapped at rate 30 the instant noise crossed the line, converting smooth
+  // noise into visible steps. A deadband set at the noise floor is the worst place for
+  // one -- it does not remove jitter, it makes it discrete.
+  //
+  // Plain exponential smoothing at a lower rate rejects far more: rate 12 attenuates
+  // noise 3.2x against rate 30's 2.0x. The cost is lag, which is why rotation and scale
+  // -- noisiest and most visible as shimmer -- are damped hardest, while position, where
+  // lag reads as the frame sliding off the face, is kept quicker.
+  // Smoothing rate is not fixed: it rises with how fast the head is actually moving.
+  //
+  // A constant rate cannot satisfy both requirements. Low enough to stop a still head
+  // shimmering is too slow to keep up with a moving one -- which is exactly the swap
+  // that was made when the deadbands came out: the shimmer went and the frame started
+  // trailing the face, covering only 70% of a movement in 100ms where it had covered
+  // 95%. Letting the rate follow speed removes the trade instead of picking a side,
+  // and is the same principle One Euro uses one layer below this.
+  //
+  // MIN applies at rest, where nothing but noise is moving. SLOPE converts measured
+  // speed into extra rate. MAX caps it so a tracking glitch cannot make the frame snap.
+  ADAPT_POS_MIN: 8,      // cm/s -> rate
+  ADAPT_POS_SLOPE: 1.4,
+  ADAPT_ROT_MIN: 6,      // rad/s -> rate
+  ADAPT_ROT_SLOPE: 15,
+  ADAPT_SCALE_MIN: 5,    // relative/s -> rate
+  ADAPT_SCALE_SLOPE: 40,
+  ADAPT_MAX: 45,
+  // The speed feeding the above is itself smoothed, or landmark noise would read as
+  // motion and hold the rate high permanently -- the failure that made One Euro's own
+  // beta of 10 counterproductive here.
+  ADAPT_SPEED_SMOOTH: 10,
+  SMOOTH_SLIDER: 40, // while a slider is being dragged, respond immediately
+  // cos of the maximum head turn whose landmarks are trusted for face-shape sampling.
+  // 0.90 is about 25 degrees of yaw.
+  SHAPE_MIN_FRONTALITY: 0.90,
+  // Frames without a face after which the face-shape lock is released, on the assumption
+  // that whoever comes back may be someone else. ~4s at 30fps.
+  SHAPE_RELEASE_FRAMES: 120,
 };
 
 // Landmark indices used to build the head-pose basis (MediaPipe FaceMesh 468 topology).
@@ -101,27 +202,65 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
     const rawDepthRef = useRef(0);
     /** Native width (X size) of the loaded frame — used to scale frame width to the eyes. */
     const rawWidthRef = useRef(1);
-    /** Measured Y/X aspect ratio of the 3D model geometry. */
-    const rawAspectRef = useRef(0.38);
     /** Read-only landmark anchors (eyes/forehead/chin) that drive the head-pose basis. */
     const poseAnchorsRef = useRef<Record<string, any> | null>(null);
     /** Smoothed temple-length Z multiplier held across frames. */
     const templeZRef = useRef(1.0);
     /** Smoothed face-size multiplier: corrects glasses scale for individual face widths. */
     const faceSizeMultRef = useRef(1.0);
-    /** Smoothed yaw scale compensation multiplier. */
-    const yawCompRef = useRef(1.0);
     /** Ref tracking whether face pose was active in the previous frame (for instant snap). */
     const wasTrackingRef = useRef(false);
-    /** Stable scale threshold reference to eliminate 1-pixel scale shimmer. */
-    const lastStableScaleRef = useRef(0);
     /** Ref tracking previous adjustments state to detect user slider interactions. */
     const lastAdjRef = useRef<any>(null);
+    /** Previous frame's TARGET pose, for measuring how fast the head is really moving. */
+    const prevTargetPosRef = useRef(new THREE.Vector3());
+    const prevTargetQuatRef = useRef(new THREE.Quaternion());
+    const prevTargetScaleRef = useRef(0);
+    /** Smoothed speeds driving the adaptive rates. */
+    const posSpeedRef = useRef(0);
+    const rotSpeedRef = useRef(0);
+    const scaleSpeedRef = useRef(0);
+    /** Loop time at the last pose CHANGE, so speed is measured over the real interval. */
+    const lastPoseChangeRef = useRef(0);
     /** Counter of frames to bypass deadband when user moves a slider. */
     const adjChangeCountRef = useRef(0);
-    /** Temple-tip reference (group space, pre-scale): height & depth of the arm ends. */
-    const armTipYRef = useRef(0);
-    const armTipZRef = useRef(-1);
+    /**
+     * Temple-splay state. Holds each arm mesh's untouched vertex positions plus a
+     * per-vertex bend weight, so the outward bend can be re-applied from the original
+     * geometry instead of accumulating drift across updates.
+     */
+    const splayRef = useRef<{
+      parts: Array<{
+        geom: THREE.BufferGeometry;
+        attr: THREE.BufferAttribute;
+        orig: Float32Array;
+        /** Per-vertex X and Y in model-root space, centred on the frame. */
+        rootX: Float32Array;
+        /** Per-vertex Z in model-root space, for rotating about the hinge. */
+        rootZ: Float32Array;
+        /** Per-vertex hinge weight: 0 through the frame front, 1 along the arm. */
+        w: Float32Array;
+        /** Model-root +X, +Y and +Z expressed in this mesh's own local space. */
+        dirX: THREE.Vector3;
+        dirY: THREE.Vector3;
+        dirZ: THREE.Vector3;
+      }>;
+      halfWidth: number;
+      /** Root-space Z of the hinge line, the axis the arms rotate about. */
+      hingeZ: number;
+      /** Root-space |X| of the arm at the hinge — each arm turns about its OWN joint. */
+      hingeX: number;
+      /** Mean root-space Y of the arm tips, centred — the reference for aiming at the ear. */
+      tipY: number;
+      /** Mean backward distance from hinge to arm tip, in model units. */
+      armReach: number;
+      appliedAngle: number;
+      appliedX: number;
+      appliedY: number;
+    }>({
+      parts: [], halfWidth: 1, hingeZ: 0, hingeX: 0, tipY: 0, armReach: 1,
+      appliedAngle: -1e9, appliedX: -1e9, appliedY: -1e9,
+    });
     /** Real-time frameSrc ref to prevent closure race condition on initial route mount. */
     const frameSrcRef = useRef<string | null | undefined>(frameSrc);
     const loadIdRef = useRef(0);
@@ -139,9 +278,14 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
     // Face-shape detection: extra read-only landmark anchors + a stabilization buffer so we
     // only surface a shape once it's held steady across many frames (avoids flicker).
     const shapeAnchorsRef = useRef<Record<string, any> | null>(null);
-    const shapeSamplesRef = useRef<FaceShape[]>([]);
-    const lastShapeRef = useRef<string | null>(null);
+    const shapeStabilizerRef = useRef(new FaceShapeStabilizer());
+    const lastShapeRef = useRef<FaceShape | null>(null);
     const shapeFrameRef = useRef(0);
+    /** Smoothed per-shape fit refinement, lerped in so a first lock isn't a visible jump. */
+    const shapeWidthRef = useRef(1);
+    const shapeSeatRef = useRef(0);
+    /** Consecutive frames without a face — a long gap means a different person may be next. */
+    const lostFramesRef = useRef(0);
 
     // Current smoothed values (for lerping user-adjustment changes only).
     // These are NOT used to smooth face-tracking — tracking is instant.
@@ -279,33 +423,170 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
 
             // Compute the bounding box of the raw model
             model.updateMatrixWorld(true);
-            const rawBox = new THREE.Box3().setFromObject(model);
+            // precise=true walks the actual vertices. The default transforms each geometry's
+            // LOCAL axis-aligned box and unions the results, which for a mesh sitting on a
+            // ROTATED node is bigger than the true bounds and lopsided about the centre. The
+            // catalogue has both kinds: a model whose node transforms are axis-aligned measures
+            // identically either way, while one exported with rotations came out 7.7% too wide,
+            // 14.9% too deep, and with its centre 1.0 units off - which lands as a frame sitting
+            // 5.5mm to one side of the nose and rendering 7.7% small, because every downstream
+            // number (centring, scale, the temple depth solve) is derived from this box.
+            const rawBox = new THREE.Box3().setFromObject(model, true);
             const rawSize = rawBox.getSize(new THREE.Vector3());
             const rawCenter = rawBox.getCenter(new THREE.Vector3());
 
-            // Capture the temple-tip reference (average of the back-most 20% of the
-            // model) so the animation loop can AIM the arms straight at the ears —
-            // correcting the arm's vertical angle, not just its length. Done here
-            // while matrices are still in raw model space (pre-recenter).
+            // Analyse the temple arms.
+            //
+            // Everything here is derived from the model's own geometry rather than assumed,
+            // because every frame is modelled differently — a rimless, a chunky acetate and a
+            // thin-temple aviator put their hinge in completely different places. A previous
+            // version hard-coded the hinge at 30% of the model's depth; on the first frame
+            // actually measured it sits at 10%, so two thirds of the arm received no bend at
+            // all and stayed inside the head. Detecting it costs one pass over the vertices at
+            // load and is then free.
+            //
+            // The detector: walk depth slices from the lens plane backwards and find the first
+            // slice whose NARROWEST vertex is far from the centre line. A frame front always
+            // has geometry near the centre (bridge, nose pads, inner lens edges); an arm is two
+            // separate rails with nothing between them. That transition is the hinge.
+            //
+            // Work is done in model-ROOT space and written back through each mesh's own inverse
+            // transform, so a model exported with a net node rotation bends along the same axis
+            // as one exported without.
             {
-              const backZ = rawBox.min.z + rawSize.z * 0.20;
-              const _p = new THREE.Vector3();
-              let tipYSum = 0, tipZSum = 0, tipN = 0;
+              const meshes: THREE.Mesh[] = [];
               model.traverse((child) => {
-                if (child instanceof THREE.Mesh && child.geometry?.attributes?.position) {
-                  const posAttr = child.geometry.attributes.position as THREE.BufferAttribute;
-                  for (let i = 0; i < posAttr.count; i++) {
-                    _p.fromBufferAttribute(posAttr, i).applyMatrix4(child.matrixWorld);
-                    if (_p.z <= backZ) { tipYSum += _p.y; tipZSum += _p.z; tipN++; }
-                  }
-                }
+                if (child instanceof THREE.Mesh && child.geometry?.attributes?.position) meshes.push(child);
               });
-              if (tipN > 0) {
-                armTipYRef.current = tipYSum / tipN - rawCenter.y;      // height vs. bridge
-                armTipZRef.current = tipZSum / tipN - rawBox.max.z;     // depth (negative = behind)
+
+              const depth = rawSize.z || 1;
+              const backZ = rawBox.max.z;
+              const _v = new THREE.Vector3();
+
+              // Root-space positions per mesh.
+              const rootPos = meshes.map((child) => {
+                const attr = child.geometry.attributes.position as THREE.BufferAttribute;
+                const out = new Float32Array(attr.count * 3);
+                for (let i = 0; i < attr.count; i++) {
+                  _v.fromBufferAttribute(attr, i).applyMatrix4(child.matrixWorld);
+                  out[i * 3] = _v.x - rawCenter.x;
+                  out[i * 3 + 1] = _v.y - rawCenter.y;
+                  out[i * 3 + 2] = _v.z;
+                }
+                return out;
+              });
+
+              let halfWidth = 1e-6;
+              for (const arr of rootPos) {
+                for (let i = 0; i < arr.length; i += 3) halfWidth = Math.max(halfWidth, Math.abs(arr[i]));
+              }
+
+              const BINS = 24;
+              /** A slice needs this many vertices before it can be judged solid or rails. */
+              const MIN_BIN_VERTS = 8;
+              const narrowest = new Array<number>(BINS).fill(Number.POSITIVE_INFINITY);
+              const binCount = new Array<number>(BINS).fill(0);
+              for (const arr of rootPos) {
+                for (let i = 0; i < arr.length; i += 3) {
+                  const t = THREE.MathUtils.clamp((backZ - arr[i + 2]) / depth, 0, 1);
+                  const bin = Math.min(BINS - 1, Math.floor(t * BINS));
+                  const ax = Math.abs(arr[i]);
+                  if (ax < narrowest[bin]) narrowest[bin] = ax;
+                  binCount[bin]++;
+                }
+              }
+
+              let hinge = -1;
+              for (let bin = 0; bin < BINS; bin++) {
+                // Skip empty slices. A model can have gaps along its depth, and an empty bin
+                // leaves narrowest[] at Infinity, which compares as "two rails" and stops the
+                // scan on a slice containing no geometry at all. On the second catalogue model
+                // that reported the hinge at t=0.08 when it is really at t=0.21.
+                if (binCount[bin] < MIN_BIN_VERTS) continue;
+                if (narrowest[bin] > AR.TEMPLE_RAIL_FRACTION * halfWidth) {
+                  hinge = bin / BINS;
+                  break;
+                }
+              }
+
+              if (hinge < 0) {
+                // No identifiable arms (a lens-only or single-piece model). Bending guesswork
+                // into it would deform the product, so leave the geometry alone.
+                splayRef.current = {
+                  parts: [], halfWidth, hingeZ: 0, hingeX: 0, tipY: 0, armReach: 1,
+                  appliedX: -1e9, appliedY: -1e9, appliedAngle: -1e9,
+                };
               } else {
-                armTipYRef.current = 0;
-                armTipZRef.current = -rawSize.z;
+                const hingeZ = backZ - hinge * depth;
+                const filletEnd = Math.min(1, hinge + AR.TEMPLE_HINGE_FILLET);
+                const parts: (typeof splayRef.current)["parts"] = [];
+                let tipSum = 0;
+                let tipN = 0;
+                let reachSum = 0;
+                let hingeXSum = 0;
+                let hingeXN = 0;
+
+                meshes.forEach((child, mi) => {
+                  const attr = child.geometry.attributes.position as THREE.BufferAttribute;
+                  const arr = rootPos[mi];
+                  const w = new Float32Array(attr.count);
+                  const rootX = new Float32Array(attr.count);
+                  const rootZ = new Float32Array(attr.count);
+                  let touched = false;
+                  for (let i = 0; i < attr.count; i++) {
+                    const t = THREE.MathUtils.clamp((backZ - arr[i * 3 + 2]) / depth, 0, 1);
+                    // Ramps across the ENTIRE arm, not just past the hinge. Saturating early
+                    // threw the arm 1.4cm outward within a tenth of its length, which reads as
+                    // a sharp elbow - a frame that looks bent rather than worn. A real temple
+                    // flares gradually from hinge to tip, and that also tracks how the skull
+                    // widens toward the ear, so it clears by more rather than less.
+                    // Short fillet, then a constant 1 along the whole arm: the rotation is
+                    // applied rigidly, so the arm cannot curve.
+                    w[i] = THREE.MathUtils.smoothstep(t, hinge, filletEnd);
+                    rootX[i] = arr[i * 3];
+                    rootZ[i] = arr[i * 3 + 2];
+                    if (w[i] > 1e-3) touched = true;
+                    if (t > 0.92) {
+                      tipSum += arr[i * 3 + 1];
+                      reachSum += hingeZ - arr[i * 3 + 2];
+                      tipN++;
+                    }
+                    // Where the arm sits laterally as it leaves the joint.
+                    if (t >= hinge && t <= filletEnd) {
+                      hingeXSum += Math.abs(arr[i * 3]);
+                      hingeXN++;
+                    }
+                  }
+                  if (!touched) return; // a pure frame-front mesh never moves
+
+                  // Root +X and +Y in this mesh's local space. Not normalised on purpose: the
+                  // inverse already carries the scale, so multiplying by a root-space distance
+                  // produces exactly that displacement in root space.
+                  const m3 = new THREE.Matrix3().setFromMatrix4(child.matrixWorld).invert();
+                  parts.push({
+                    geom: child.geometry as THREE.BufferGeometry,
+                    attr,
+                    orig: new Float32Array(attr.array as ArrayLike<number>),
+                    rootX,
+                    w,
+                    rootZ,
+                    dirX: new THREE.Vector3(1, 0, 0).applyMatrix3(m3),
+                    dirY: new THREE.Vector3(0, 1, 0).applyMatrix3(m3),
+                    dirZ: new THREE.Vector3(0, 0, 1).applyMatrix3(m3),
+                  });
+                });
+
+                splayRef.current = {
+                  parts,
+                  halfWidth,
+                  hingeZ,
+                  hingeX: hingeXN > 0 ? hingeXSum / hingeXN : halfWidth,
+                  tipY: tipN > 0 ? tipSum / tipN : 0,
+                  armReach: tipN > 0 ? Math.max(1e-6, reachSum / tipN) : 1,
+                  appliedX: -1e9,
+                  appliedY: -1e9,
+                  appliedAngle: -1e9,
+                };
               }
             }
 
@@ -325,8 +606,6 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             // depth (arm length) to reach the ears.
             rawWidthRef.current = rawSize.x || 1;
             rawDepthRef.current = rawSize.z;
-            const measuredAspect = (rawSize.y > 0 && rawSize.x > 0) ? (rawSize.y / rawSize.x) : 0.38;
-            rawAspectRef.current = measuredAspect;
 
             // Apply initial transforms from current adjustments
             const adj = adjustmentsRef.current;
@@ -482,7 +761,11 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               maxTrack: 1,
               shouldFaceUser: true,
               filterMinCF: 0.001,   // calm, jitter-free when the head is still
-              filterBeta: 10,       // smooth, vibration-free movement tracking
+              // Raised back from 4. Damping the tracker was the wrong place to fight
+              // jitter: it cost responsiveness on every frame, moving or not. The
+              // smoothing above now adapts to speed, so this layer can stay quick and
+              // the still-head case is handled where it can be handled without lag.
+              filterBeta: 8,
               // Suppress MindAR's stock loading/scanning/error overlays — this component
               // renders its own status chrome, and MindAR's injected its own absolutely
               // positioned layers into the same container.
@@ -546,15 +829,39 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             const vh = video.videoHeight;
             if (cw <= 0 || ch <= 0 || vw <= 0 || vh <= 0) return;
 
-            // Cover-fit: the smallest rect with the video's aspect that fully covers the container.
             const vAsp = vw / vh;
             const cAsp = cw / ch;
             let w: number;
             let h: number;
-            if (vAsp > cAsp) { h = ch; w = ch * vAsp; }
-            else { w = cw; h = cw / vAsp; }
 
-            // zoom is clamped to >= 1 so the feed always covers — no black bars, ever.
+            // Phones FIT the whole frame; larger screens still COVER.
+            //
+            // The portrait resolution asked for in the getUserMedia constraints is only an
+            // `ideal`, and plenty of Android devices ignore it and hand back a landscape
+            // stream anyway. Cover-fitting a landscape stream into a portrait phone container
+            // throws away 50% of the width — half the camera's horizontal field of view — and
+            // magnifies what is left, which is why the face filled the screen. Fitting instead
+            // shows whatever the camera actually gave us at its natural scale, whichever way
+            // round it arrives.
+            //
+            // The cost is letterbox bars when the stream's shape differs from the panel's.
+            // They sit on the studio's own near-black background, which is a far better
+            // outcome than a face cropped to twice its size.
+            const isCompact = cw < 768;
+            if (isCompact) {
+              const fit = Math.min(cw / vw, ch / vh);
+              w = vw * fit;
+              h = vh * fit;
+            } else if (vAsp > cAsp) {
+              h = ch;
+              w = ch * vAsp;
+            } else {
+              w = cw;
+              h = cw / vAsp;
+            }
+
+            // Still clamped to >= 1: on a phone that now means "the whole frame" as the
+            // widest view, and the slider can only crop in from there.
             const zoom = Math.max(1, adjustmentsRef.current.cameraZoom ?? 1);
             const stretch = adjustmentsRef.current.faceStretch ?? 1;
             w *= zoom;
@@ -682,8 +989,16 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
           }
 
           // Face mesh occluder — hides the temple arms where they pass behind the head.
-          // Negative polygonOffset pushes its depth value BEHIND the face surface, preventing
-          // it from clipping front-facing frame & lens edges at the nose/cheek sides on turns.
+          //
+          // The offset used to be factor -1, units -4. Both signs were wrong for the stated
+          // intent: polygon offset is ADDED to depth, so negative values pull the occluder
+          // TOWARD the camera and make it occlude more, not less. Worse, `factor` multiplies
+          // the depth SLOPE, which is at its maximum exactly at the head silhouette — where
+          // the temple arms run. The occluder was inflating there and eating arms that were
+          // genuinely outside the head, which no amount of splay could fix because the bias
+          // scales with viewing angle rather than distance.
+          // Now: no slope term at all, and a small constant push AWAY from the camera, which
+          // is what protects the lens edges from z-fighting without swallowing anything.
           const faceMesh = mindarInstance.addFaceMesh();
           faceMesh.material = new THREE.MeshBasicMaterial({
             colorWrite: false,
@@ -691,8 +1006,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             depthTest: true,
             side: THREE.DoubleSide,
             polygonOffset: true,
-            polygonOffsetFactor: -1,
-            polygonOffsetUnits: -4,
+            polygonOffsetFactor: 0,
+            polygonOffsetUnits: 4,
           });
           faceMesh.renderOrder = 0;
           faceMesh.visible = true;
@@ -711,8 +1026,10 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
           // (portrait on phones) at a modest resolution — this both fills the screen properly
           // and roughly halves per-frame tracking cost.
           const portrait = container.clientHeight >= container.clientWidth;
-          const idealLong = 960;
-          const idealShort = 720;
+          // Higher resolution = wider sensor crop area = face naturally smaller in frame
+          // on Android selfie cameras, which alleviates the "face too big" problem.
+          const idealLong = 1280;
+          const idealShort = 960;
           const nativeGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
           navigator.mediaDevices.getUserMedia = async (constraints: MediaStreamConstraints) => {
             if (!constraints?.video || typeof constraints.video !== "object") {
@@ -726,9 +1043,14 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                 ...constraints,
                 video: {
                   ...constraints.video,
+                  facingMode: "user",
                   width: { ideal: portrait ? idealShort : idealLong },
                   height: { ideal: portrait ? idealLong : idealShort },
                   frameRate: { ideal: 30 },
+                  // Request minimum hardware zoom on Android (zoom:1 = widest FOV).
+                  // This is an "advanced" constraint — browsers that don't support it
+                  // silently ignore it, so there's no risk of a request failure.
+                  advanced: [{ zoom: 1 } as any],
                 },
               });
             } catch (e) {
@@ -809,6 +1131,9 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
 
           // Three.js clock to compute delta time for frame-rate independence
           const clock = new THREE.Clock();
+          /** Monotonic loop time in seconds, accumulated from dt so it cannot skip on a stall.
+              Head speed is measured against this rather than against frame counts. */
+          let loopTime = 0;
           // Scratch vectors reused each frame for the ear auto-fit (no per-frame allocation).
           const _earL = new THREE.Vector3();
           const _earR = new THREE.Vector3();
@@ -823,8 +1148,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
           const _right = new THREE.Vector3();
           const _up = new THREE.Vector3();
           const _fwd = new THREE.Vector3();
-          const _eyeMid = new THREE.Vector3();
           const _earMid = new THREE.Vector3();
+          const _tmp = new THREE.Vector3();
           const _pos = new THREE.Vector3();
           const _basis = new THREE.Matrix4();
           const _qTarget = new THREE.Quaternion();
@@ -833,9 +1158,20 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
 
           // Sample the shape landmarks every few frames, classify, and continuously emit
           // the current best shape so the UI stays live — not just on first detection.
-          const sampleFaceShape = () => {
+          /**
+           * Sample the face proportions and feed the stabiliser.
+           *
+           * Only near-frontal frames are used. The ratios themselves are rotation-invariant
+           * (they come from 3D metric landmarks), but MediaPipe's landmark ACCURACY falls off
+           * sharply once a face turns, and the silhouette points this reads — cheek, jaw, brow —
+           * are exactly the ones that degrade first. Feeding those in is how a stable measure
+           * gets polluted by geometry that was never in question.
+           */
+          const sampleFaceShape = (frontality: number) => {
             const sa = shapeAnchorsRef.current;
             if (!onFaceShapeDetect || !sa) return;
+            if (frontality < AR.SHAPE_MIN_FRONTALITY) return;
+
             const pts: Record<string, { x: number; y: number; z: number }> = {};
             for (const key of Object.keys(FACE_SHAPE_LANDMARKS)) {
               const g = sa[key]?.group;
@@ -843,27 +1179,14 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               g.getWorldPosition(_shapeVec);
               pts[key] = { x: _shapeVec.x, y: _shapeVec.y, z: _shapeVec.z };
             }
-            const shape = classifyFaceShape(pts as any);
-            if (!shape) return;
-            const buf = shapeSamplesRef.current;
-            buf.push(shape);
-            // Smaller rolling window (20) → faster initial lock (~0.6 s at 30 fps × 3rd-frame sampling).
-            if (buf.length > 20) buf.shift();
-            // Start deciding once we have 10 samples (was 20) so the card appears quickly.
-            if (buf.length < 10) return;
-            const counts = new Map<string, number>();
-            let best: string | null = null;
-            let bestN = 0;
-            for (const s of buf) {
-              const n = (counts.get(s) ?? 0) + 1;
-              counts.set(s, n);
-              if (n > bestN) { bestN = n; best = s; }
-            }
-            // Emit whenever a stable majority is found — no change-only gate — so the
-            // shape card updates live as the face angle or expression shifts.
-            if (best && bestN / buf.length >= 0.55) {
-              lastShapeRef.current = best;
-              onFaceShapeDetect(best as FaceShape);
+
+            const r = faceRatios(pts as any);
+            if (!r) return;
+
+            const shape = shapeStabilizerRef.current.add(r);
+            if (shape && shape !== lastShapeRef.current) {
+              lastShapeRef.current = shape;
+              onFaceShapeDetect(shape);
             }
           };
 
@@ -876,14 +1199,7 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
           // frame-rate independent, allowing butter-smooth updates on both
           // standard 30-60Hz mobile screens and premium 90-120Hz displays.
           renderer.setAnimationLoop(() => {
-            const anchor = mindarInstance.anchors?.[0];
             const glasses = glassesRef.current;
-
-            // Face-shape sampling runs every 3rd frame (was every 6th) for faster live updates.
-            if (anchor?.group?.visible) {
-              shapeFrameRef.current++;
-              if (shapeFrameRef.current % 3 === 0) sampleFaceShape();
-            }
 
             const pose = poseAnchorsRef.current;
             const eyeLg = pose?.eyeL?.group;
@@ -894,11 +1210,14 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               !!eyeLg?.visible && !!eyeRg?.visible && !!foreg?.visible && !!ching?.visible;
             const poseReady = !!glasses && faceLandmarksVisible;
 
+            // Read once per frame, tracking or not. Reading it only inside the tracking
+            // branch let the delta accumulate across a no-face gap, so the first frame after
+            // re-acquisition saw an inflated dt and the smoothing jumped.
+            const clampedDt = Math.min(clock.getDelta(), 0.1);
+            loopTime += clampedDt;
+
             if (poseReady) {
               const adj = adjustmentsRef.current;
-
-              // Frame-rate-independent smoothing factor.
-              const clampedDt = Math.min(clock.getDelta(), 0.1);
               const k = 1.0 - Math.exp(-AR.SMOOTH * clampedDt);
 
               // ── Head-pose basis from tracked landmark POSITIONS ──────────
@@ -921,12 +1240,16 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               _qTarget.multiply(_qUser);
 
               const eyeDist = _eyeL.distanceTo(_eyeR);
+              lostFramesRef.current = 0;
 
               // ── Face Size Auto-Fit ───────────────────────────────────────
               // Cheek landmarks 234/454 are registered as shape anchors ("cheekL"/"cheekR").
               // We measure real cheekbone width in world space vs eye separation to auto-adapt
               // glasses size for wider or narrower faces.
-              const REFERENCE_FACE_RATIO = 1.65; // avg cheekWidth / eyeDist
+              // Measured off MindAR's canonical-face-model.obj: |234-454| / |33-263|
+              // = 15.328cm / 8.892cm. At 1.65 an average face resolved to a multiplier of
+              // 1.045 rather than 1.0 — a standing +4.5% oversize on every user.
+              const REFERENCE_FACE_RATIO = 1.7239; // canonical cheekWidth / eyeDist
               const sa = shapeAnchorsRef.current;
               const cheekLg = sa?.cheekL?.group;
               const cheekRg = sa?.cheekR?.group;
@@ -939,20 +1262,32 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                 if (cheekWidth > 1e-6 && eyeDist > 1e-6) {
                   const rawRatio = cheekWidth / eyeDist;
                   const rawMult = rawRatio / REFERENCE_FACE_RATIO;
-                  const targetMult = THREE.MathUtils.clamp(rawMult, 0.80, 1.30);
+                  // Wider clamp (0.75–1.40 vs previous 0.80–1.30) gives more headroom
+                  // to auto-adapt across the wide variety of Android selfie camera FOVs.
+                  const targetMult = THREE.MathUtils.clamp(rawMult, 0.75, 1.40);
                   // Smooth slowly (k * 0.10) so scale changes are rock-solid without shimmer
                   faceSizeMultRef.current = THREE.MathUtils.lerp(faceSizeMultRef.current, targetMult, k * 0.10);
                   faceSizeMultiplier = faceSizeMultRef.current;
                 }
               }
 
-              // ── Yaw-Aware Scale Compensation ─────────────────────────────
-              // Compensates perspective foreshortening of eyeDist when head turns 45°.
-              // Lerped (k * 0.15) to prevent scale vibration from raw _right.z noise.
-              const yawFactor = Math.sqrt(Math.max(0, 1.0 - _right.z * _right.z));
-              const rawYawComp = THREE.MathUtils.clamp(1.0 / Math.max(yawFactor, 0.6), 1.0, 1.35);
-              yawCompRef.current = THREE.MathUtils.lerp(yawCompRef.current, rawYawComp, k * 0.15);
-              const yawComp = yawCompRef.current;
+              // ── Frontality ───────────────────────────────────────────────
+              // 1 when facing the camera, falling toward 0 as the head turns. Used to gate
+              // face-shape sampling — NOT to scale the frame.
+              //
+              // There used to be a yaw scale compensation here, dividing scale by this same
+              // factor to undo the "perspective foreshortening of eyeDist". eyeDist is not
+              // foreshortened: it is the 3D distance between two metric world landmarks, and
+              // an anchor's world position is R*t + tvec, so the separation reduces to
+              // |t1 - t2| — invariant to head rotation. The correction was undoing something
+              // that never happened, and inflated the frame by up to 35% the moment the user
+              // turned their head: a 142mm frame rendered at 181mm at a 35 degree turn.
+              const frontality = Math.sqrt(Math.max(0, 1.0 - _right.z * _right.z));
+
+              // Face-shape sampling. Every 6th frame is ample: the stabiliser wants a few
+              // seconds of independent looks, not the same face 120 times a second.
+              shapeFrameRef.current++;
+              if (shapeFrameRef.current % 6 === 0) sampleFaceShape(frontality);
 
               // ── Detect User Slider Adjustments ────────────────────────────
               if (lastAdjRef.current) {
@@ -964,42 +1299,33 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                 const diffRotZ = Math.abs(adj.rotationZ - lastAdjRef.current.rotationZ);
                 const diffScale = Math.abs(adj.scale - lastAdjRef.current.scale);
                 if (diffX > 1e-4 || diffY > 1e-4 || diffZ > 1e-4 || diffRotX > 1e-4 || diffRotY > 1e-4 || diffRotZ > 1e-4 || diffScale > 1e-4) {
-                  adjChangeCountRef.current = 6; // Bypass deadband for 6 frames on slider interaction
+                  adjChangeCountRef.current = 6; // Track the slider at full speed for 6 frames
                 }
               }
               lastAdjRef.current = { ...adj };
               const isSliderActive = adjChangeCountRef.current > 0;
               if (isSliderActive) adjChangeCountRef.current--;
 
-              const rawTargetScale = (eyeDist * AR.SCALE_K / rawWidthRef.current) * adj.scale * faceSizeMultiplier * yawComp;
+              // ── Shape-driven fit refinement ──────────────────────────────
+              // Width is driven by the MEASURED face width above; shape only refines it.
+              // Lerped so the moment the stabiliser locks isn't a visible pop.
+              const fit = lastShapeRef.current ? SHAPE_FIT[lastShapeRef.current] : null;
+              shapeWidthRef.current = THREE.MathUtils.lerp(
+                shapeWidthRef.current, fit ? fit.widthScale : 1, k * 0.05,
+              );
+              shapeSeatRef.current = THREE.MathUtils.lerp(
+                shapeSeatRef.current, fit ? fit.seatOffset : 0, k * 0.05,
+              );
 
-              // ── 1. Scale Deadband (Zero Shimmer) ──────────────────────────
-              if (lastStableScaleRef.current === 0) {
-                lastStableScaleRef.current = rawTargetScale;
-              } else {
-                const scaleDeltaRatio = Math.abs(rawTargetScale - lastStableScaleRef.current) / lastStableScaleRef.current;
-                if (scaleDeltaRatio > 0.015 || isSliderActive) {
-                  lastStableScaleRef.current = rawTargetScale;
-                }
-              }
-              const targetScale = lastStableScaleRef.current;
+              const rawTargetScale =
+                (eyeDist * AR.SCALE_K / rawWidthRef.current) *
+                adj.scale * faceSizeMultiplier * shapeWidthRef.current;
 
-              // ── Auto-stretch temple length to reach the ears ─────────────
-              const earLg = mindarInstance.anchors?.[1]?.group;
-              const earRg = mindarInstance.anchors?.[2]?.group;
-              if (earLg?.visible && earRg?.visible && rawDepthRef.current > 1e-6 && targetScale > 1e-6) {
-                earLg.getWorldPosition(_earL);
-                earRg.getWorldPosition(_earR);
-                _earMid.addVectors(_earL, _earR).multiplyScalar(0.5);
-                _eyeMid.addVectors(_eyeL, _eyeR).multiplyScalar(0.5);
-                const reach = _earMid.distanceTo(_eyeMid);          // world distance front→ear
-                const nativeArm = rawDepthRef.current * targetScale; // world arm length at scale 1×Z
-                if (nativeArm > 1e-6) {
-                  const solved = THREE.MathUtils.clamp(reach / nativeArm, AR.TEMPLE_MIN, AR.TEMPLE_MAX);
-                  templeZRef.current = THREE.MathUtils.lerp(templeZRef.current, solved, k);
-                }
-              }
-              const templeZ = templeZRef.current * adj.templeLength;
+              // Smoothed below rather than deadbanded. A 1.5% threshold against ~1% eyeDist
+              // noise meant size held still and then jumped, which reads as the frame
+              // pulsing on the face.
+              const targetScale = rawTargetScale;
+
 
               // ── Position Base: Nose Bridge Landmark + EyeDist Scaled User Offsets ──
               const noseAnchor = mindarInstance.anchors?.[0]?.group;
@@ -1014,48 +1340,229 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               const userZ = adj.positionZ * eyeDist * 2.5;
               const userX = adj.positionX * eyeDist * 2.5;
 
-              _pos.addScaledVector(_up, -(AR.SEAT_DOWN * eyeDist) + userY);
+              _pos.addScaledVector(_up, -((AR.SEAT_DOWN + shapeSeatRef.current) * eyeDist) + userY);
               _pos.addScaledVector(_fwd, AR.SEAT_FWD * eyeDist + userZ);
               _pos.addScaledVector(_right, userX);
 
-              // ── 2. Positional & Rotational Deadband + Adaptive Lerp ────────
-              const posDelta = glasses.position.distanceTo(_pos);
-              const rotDelta = glasses.quaternion.angleTo(_qTarget);
+              // ── Fit the temples to the ears ──────────────────────────────
+              // The arm spans from the LENS PLANE back to the ear, and the lens plane is
+              // `_pos` — pushed forward of the nose bridge by SEAT_FWD. Measuring from the eye
+              // midpoint instead, as this did, under-asks by half: on the canonical face the
+              // true span is 7.95cm and eyeMid→earMid is only 5.18cm. The solve then produced
+              // 0.40 and was rescued by the 0.6 lower clamp, landing near the right answer by
+              // luck rather than by measurement. Projecting onto the face normal is also what
+              // the Z scale physically does, so the two now agree.
+              const earLg = mindarInstance.anchors?.[1]?.group;
+              const earRg = mindarInstance.anchors?.[2]?.group;
+              if (earLg?.visible && earRg?.visible && rawDepthRef.current > 1e-6 && targetScale > 1e-6) {
+                earLg.getWorldPosition(_earL);
+                earRg.getWorldPosition(_earR);
+                _earMid.addVectors(_earL, _earR).multiplyScalar(0.5);
 
-              const kPosRate = posDelta < 0.002 && !isSliderActive ? 6 : 30;
-              const kRotRate = rotDelta < 0.008 && !isSliderActive ? 6 : 30;
+                const reach = _tmp.subVectors(_pos, _earMid).dot(_fwd) * AR.TEMPLE_REACH_K;
+                const nativeArm = rawDepthRef.current * targetScale;
+                if (nativeArm > 1e-6 && reach > 0) {
+                  const solved = THREE.MathUtils.clamp(reach / nativeArm, AR.TEMPLE_MIN, AR.TEMPLE_MAX);
+                  // Driven by the ear landmarks, which are among the noisiest on the mesh,
+                  // and arm length changing frame to frame reads as the temples breathing.
+                  templeZRef.current = THREE.MathUtils.lerp(
+                    templeZRef.current,
+                    solved,
+                    1.0 - Math.exp(-AR.ADAPT_SCALE_MIN * clampedDt),
+                  );
+                }
 
-              const kPos = 1.0 - Math.exp(-kPosRate * clampedDt);
-              const kRot = 1.0 - Math.exp(-kRotRate * clampedDt);
+                // ── Sit the arms on the ears ──────────────────────────────
+                // Two corrections, both measured from the wearer:
+                //
+                //  Angle — rotate each arm outward about its hinge so it clears the skull.
+                //      An arm at its modelled width runs inside the head for its last 40%,
+                //      where the occluder correctly hides it, which reads as the temple being
+                //      too short. This is a RIGID rotation: every vertex keeps its position
+                //      relative to every other, so a straight temple stays straight and only
+                //      its direction changes. An earlier version displaced vertices sideways
+                //      by a varying amount, which bent the arm and made the frame look broken.
+                //  Y — shift the arm so its TIP lands on the ear landmark, since the model's
+                //      own angle knows nothing about where this wearer's ears sit.
+                const splay = splayRef.current;
+                if (splay.parts.length > 0 && targetScale > 1e-6) {
+                  const sa2 = shapeAnchorsRef.current;
+                  const cl = sa2?.cheekL?.group;
+                  const cr = sa2?.cheekR?.group;
+                  let headHalf = _earL.distanceTo(_earR) * 0.5;
+                  if (cl?.visible && cr?.visible) {
+                    cl.getWorldPosition(_cheekL);
+                    cr.getWorldPosition(_cheekR);
+                    headHalf = Math.max(headHalf, _cheekL.distanceTo(_cheekR) * 0.5);
+                  }
 
-              const TARGET_FRAME_ASPECT = 0.38;
-              const currentAspect = rawAspectRef.current > 0 ? rawAspectRef.current : TARGET_FRAME_ASPECT;
-              const aspectCorrection = TARGET_FRAME_ASPECT / Math.min(currentAspect, 1.0);
+                  // How much further out the tip needs to be, converted to an angle at the
+                  // hinge through the arm's own length.
+                  let angle = 0;
+                  if (AR.TEMPLE_SPLAY_STRENGTH > 0) {
+                    const needModel =
+                      (headHalf + AR.TEMPLE_CLEARANCE) / targetScale - splay.halfWidth;
+                    const sin = THREE.MathUtils.clamp(needModel / splay.armReach, 0, 0.9);
+                    angle = Math.min(
+                      Math.asin(sin),
+                      THREE.MathUtils.degToRad(AR.TEMPLE_SPLAY_MAX_DEG),
+                    ) * AR.TEMPLE_SPLAY_STRENGTH;
+                  }
+
+                  // Where the ear sits vertically relative to the frame, in model units.
+                  const earUp = _tmp.subVectors(_earMid, _pos).dot(_up) - AR.TEMPLE_EAR_DROP;
+                  const aimCap = AR.TEMPLE_AIM_MAX / targetScale;
+                  const wantTipY = THREE.MathUtils.clamp(
+                    earUp / targetScale - splay.tipY,
+                    -aimCap,
+                    aimCap,
+                  );
+
+                  // Rewriting the arm vertices is cheap but not free, and neither target moves
+                  // much once a face is tracked. Only rebuild on a change worth seeing.
+                  if (
+                    Math.abs(angle - splay.appliedAngle) > 0.004 ||
+                    Math.abs(wantTipY - splay.appliedY) > splay.halfWidth * 0.01
+                  ) {
+                    splay.appliedAngle = angle;
+                    splay.appliedY = wantTipY;
+                    for (const part of splay.parts) {
+                      const arr = part.attr.array as Float32Array;
+                      for (let i = 0; i < part.attr.count; i++) {
+                        const w = part.w[i];
+                        const x = part.rootX[i];
+                        // Signed so each arm turns away from the head, not both the same way.
+                        const a = -Math.sign(x) * angle * w;
+                        const cos = Math.cos(a);
+                        const sin = Math.sin(a);
+                        // Rotate about the vertical axis through THIS arm's own joint.
+                        // Using the model centre line instead put the pivot half a frame
+                        // away, so the arm root swung backward off the front and the whole
+                        // temple travelled on a long lever — the arm appeared detached and
+                        // flung outward rather than hinged.
+                        const rx = x - Math.sign(x) * splay.hingeX;
+                        const rz = part.rootZ[i] - splay.hingeZ;
+                        const dx = rx * cos + rz * sin - rx;
+                        const ddz = -rx * sin + rz * cos - rz;
+                        const py = wantTipY * w;
+                        arr[i * 3] =
+                          part.orig[i * 3] + part.dirX.x * dx + part.dirY.x * py + part.dirZ.x * ddz;
+                        arr[i * 3 + 1] =
+                          part.orig[i * 3 + 1] + part.dirX.y * dx + part.dirY.y * py + part.dirZ.y * ddz;
+                        arr[i * 3 + 2] =
+                          part.orig[i * 3 + 2] + part.dirX.z * dx + part.dirY.z * py + part.dirZ.z * ddz;
+                      }
+                      part.attr.needsUpdate = true;
+                      // The bounds moved with the vertices; a stale sphere frustum-culls the
+                      // arms at the edge of frame.
+                      part.geom.computeBoundingSphere();
+                    }
+                  }
+                }
+              }
+              const templeZ = templeZRef.current * adj.templeLength;
+
+              // ── 2. Placement smoothing, adaptive to head speed ──────────────
+              // Measured from the TARGET rather than the rendered pose, so the rate reacts
+              // to the head moving rather than to the frame catching up with it.
+              // Speed is measured across POSE CHANGES, not rendered frames.
+              //
+              // MindAR detects on its own loop at roughly 25Hz while this renders at the
+              // display's rate, so most frames replay an unchanged pose. Dividing by the
+              // render dt made 83% of frames at 144Hz report the head as stationary --
+              // dragging the smoothed speed to zero and pinning the adaptive rate at its
+              // minimum, i.e. maximum lag -- while the one frame that did move reported 5.8x
+              // the real speed. The faster the display, the worse it got, which is why
+              // stickiness differed between 60Hz and 144Hz panels.
+              const posDelta = prevTargetPosRef.current.distanceTo(_pos);
+              const rotDelta = prevTargetQuatRef.current.angleTo(_qTarget);
+              const poseMoved = posDelta > 1e-6 || rotDelta > 1e-6;
+
+              if (poseMoved) {
+                const since = Math.max(1e-3, loopTime - lastPoseChangeRef.current);
+                const invDt = 1 / since;
+                const rawPosSpeed = posDelta * invDt;
+                const rawRotSpeed = rotDelta * invDt;
+                const rawScaleSpeed =
+                  prevTargetScaleRef.current > 1e-9
+                    ? (Math.abs(targetScale - prevTargetScaleRef.current) / prevTargetScaleRef.current) * invDt
+                    : 0;
+
+                // Smoothed over the same interval, so the decay is wall-clock based and does
+                // not depend on how many frames happened to fall between detections either.
+                const kSpeed = 1.0 - Math.exp(-AR.ADAPT_SPEED_SMOOTH * since);
+                // First tracked frame has no previous pose; seeding from it would read as a
+                // huge jump and snap the rates to maximum.
+                if (wasTrackingRef.current) {
+                  posSpeedRef.current = THREE.MathUtils.lerp(posSpeedRef.current, rawPosSpeed, kSpeed);
+                  rotSpeedRef.current = THREE.MathUtils.lerp(rotSpeedRef.current, rawRotSpeed, kSpeed);
+                  scaleSpeedRef.current = THREE.MathUtils.lerp(scaleSpeedRef.current, rawScaleSpeed, kSpeed);
+                }
+                prevTargetPosRef.current.copy(_pos);
+                prevTargetQuatRef.current.copy(_qTarget);
+                prevTargetScaleRef.current = targetScale;
+                lastPoseChangeRef.current = loopTime;
+              } else if (loopTime - lastPoseChangeRef.current > 0.25) {
+                // Genuinely still for a quarter second: let the rates fall back to their
+                // resting values rather than holding the last movement's speed forever.
+                const kDecay = 1.0 - Math.exp(-AR.ADAPT_SPEED_SMOOTH * clampedDt);
+                posSpeedRef.current = THREE.MathUtils.lerp(posSpeedRef.current, 0, kDecay);
+                rotSpeedRef.current = THREE.MathUtils.lerp(rotSpeedRef.current, 0, kDecay);
+                scaleSpeedRef.current = THREE.MathUtils.lerp(scaleSpeedRef.current, 0, kDecay);
+              }
+
+              const rate = (min: number, slope: number, speed: number) =>
+                isSliderActive
+                  ? AR.SMOOTH_SLIDER
+                  : Math.min(AR.ADAPT_MAX, min + slope * speed);
+
+              const kPos = 1.0 - Math.exp(
+                -rate(AR.ADAPT_POS_MIN, AR.ADAPT_POS_SLOPE, posSpeedRef.current) * clampedDt,
+              );
+              const kRot = 1.0 - Math.exp(
+                -rate(AR.ADAPT_ROT_MIN, AR.ADAPT_ROT_SLOPE, rotSpeedRef.current) * clampedDt,
+              );
+              const kScale = 1.0 - Math.exp(
+                -rate(AR.ADAPT_SCALE_MIN, AR.ADAPT_SCALE_SLOPE, scaleSpeedRef.current) * clampedDt,
+              );
+
+              // The frame is scaled UNIFORMLY. A previous 'aspect correction' stretched every
+              // model vertically toward a fixed 0.38 height:width, by up to +/-35% — which
+              // erased the genuine difference between a tall aviator and a shallow rectangle,
+              // i.e. exactly what distinguishes the products being sold. Lens height is a real
+              // measured dimension of a real object; it is not ours to normalise.
 
               // ── 3. First-Frame Instant Snap ────────────────────────────────
               if (!wasTrackingRef.current) {
                 glasses.position.copy(_pos);
                 glasses.quaternion.copy(_qTarget);
-                glasses.scale.set(targetScale, targetScale * aspectCorrection, targetScale * templeZ);
+                glasses.scale.set(targetScale, targetScale, targetScale * templeZ);
                 wasTrackingRef.current = true;
               } else {
-                if (posDelta > 0.0012 || isSliderActive) {
-                  glasses.position.lerp(_pos, kPos);
-                }
-                if (rotDelta > 0.007 || isSliderActive) {
-                  glasses.quaternion.slerp(_qTarget, kRot);
-                }
-                const sPrev = glasses.scale.x;
-                const s = THREE.MathUtils.lerp(sPrev, targetScale, kPos);
-                const sy = s * THREE.MathUtils.clamp(aspectCorrection, 0.70, 1.35);
-                glasses.scale.set(s, sy, s * templeZ);
+                glasses.position.lerp(_pos, kPos);
+                glasses.quaternion.slerp(_qTarget, kRot);
+                const s = THREE.MathUtils.lerp(glasses.scale.x, targetScale, kScale);
+                glasses.scale.set(s, s, s * templeZ);
               }
 
               glasses.visible = true; // Show glasses when face pose is tracked
               reportStatus("tracking");
             } else {
               wasTrackingRef.current = false;
-              lastStableScaleRef.current = 0;
+              // Re-seed the speed clock, or the gap counts as elapsed time and the first
+              // movement after re-acquiring reads as almost stationary.
+              lastPoseChangeRef.current = loopTime;
+              posSpeedRef.current = 0;
+              rotSpeedRef.current = 0;
+              scaleSpeedRef.current = 0;
+              // A brief drop-out is the same person blinking or stepping out of frame; a long
+              // one may be somebody else sitting down. Only the latter releases the lock.
+              lostFramesRef.current++;
+              if (lostFramesRef.current === AR.SHAPE_RELEASE_FRAMES) {
+                shapeStabilizerRef.current.reset();
+                lastShapeRef.current = null;
+                onFaceShapeDetect?.(null);
+              }
               if (glasses) {
                 glasses.visible = false; // Hide glasses completely when no face is detected
               }

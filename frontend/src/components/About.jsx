@@ -2,7 +2,6 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import {
   Sparkles,
-  Upload,
   Wand2,
   MapPin,
   Phone,
@@ -190,7 +189,7 @@ export default function About() {
             >
               <h2 className="text-lg font-semibold" style={{ color: 'var(--text-accent)' }}>Virtual Try-On</h2>
               <p className="mt-1 text-xs sm:text-sm" style={{ color: 'var(--text-secondary)' }}>
-                Try frames on in live webcam or upload a photo.
+                Try frames on live through your webcam.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {['Width: Natural', 'Front'].map(tag => (
@@ -214,18 +213,14 @@ export default function About() {
                   </div>
                 ))}
               </div>
-              <div className="mt-4 grid grid-cols-2 gap-2">
+              <div className="mt-4">
                 <Link
                   to="/try-on"
-                  className="inline-flex items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 px-4 py-2 text-xs font-semibold text-white min-h-[38px] shadow-md"
+                  className="inline-flex w-full items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 px-4 py-2 text-xs font-semibold text-white min-h-[38px] shadow-md"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
                   Try On Live
                 </Link>
-                <button className="inline-flex items-center justify-center gap-1 rounded-xl px-4 py-2 text-xs font-semibold min-h-[38px]" style={{ border: '2px solid var(--border-color)', color: 'var(--text-accent)' }}>
-                  <Upload className="w-3.5 h-3.5" />
-                  Upload Photo
-                </button>
               </div>
               <p className="mt-3 text-xs" style={{ color: 'var(--text-muted)' }}>
                 Tip: Use bright natural lighting for the most realistic lens and frame match.
