@@ -95,6 +95,24 @@ module.exports = {
         card: "0px 4px 20px rgba(31,41,55,0.06)",
         "card-hover": "0px 12px 40px rgba(31,41,55,0.12)",
       },
+      keyframes: {
+        // Counter-rotation for the inner arc of LoadingSpinner. Tailwind ships only
+        // `spin`, which turns one way, so the two rings would otherwise move together
+        // and read as one thick ring rather than two.
+        "spin-reverse": {
+          to: { transform: "rotate(-360deg)" },
+        },
+        // The soft halo behind the rings: breathes rather than blinks.
+        "spinner-glow": {
+          "0%, 100%": { opacity: "0.35", transform: "scale(0.9)" },
+          "50%": { opacity: "0.75", transform: "scale(1.08)" },
+        },
+      },
+      animation: {
+        "spin-slow": "spin 1.6s linear infinite",
+        "spin-reverse": "spin-reverse 1.1s linear infinite",
+        "spinner-glow": "spinner-glow 1.8s ease-in-out infinite",
+      },
     },
   },
   plugins: [],
