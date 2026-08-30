@@ -9,28 +9,26 @@ import LoadingSpinner from './common/LoadingSpinner';
 import EmptyState from './common/EmptyState';
 import { fetchProducts } from '../api/productsApi';
 import { toStorefrontProduct } from '../utils/storefrontProduct';
-import type { StorefrontProduct } from '../utils/storefrontProduct';
-import type { DropdownOption } from './common/Dropdown';
 import { SHAPE_GUIDE } from './ar/faceShape';
 
 export default function Shop() {
-  const [products, setProducts] = useState<StorefrontProduct[]>([]);
-  const [filteredProducts, setFilteredProducts] = useState<StorefrontProduct[]>([]);
+  const [products, setProducts] = useState([]);
+  const [filteredProducts, setFilteredProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   // A failed load is not an empty catalogue. Kept apart so the page can say which
   // happened instead of blaming the user's filters for the server being unreachable.
-  const [loadError, setLoadError] = useState<unknown>(null);
+  const [loadError, setLoadError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Filter states
-  const [selectedCategories, setSelectedCategories] = useState<DropdownOption[]>([]);
-  const [selectedBadges, setSelectedBadges] = useState<DropdownOption[]>([]);
-  const [selectedFaceShapes, setSelectedFaceShapes] = useState<DropdownOption[]>([]);
-  const [selectedBrands, setSelectedBrands] = useState<DropdownOption[]>([]);
-  const [selectedStyles, setSelectedStyles] = useState<DropdownOption[]>([]);
-  const [selectedPriceRanges, setSelectedPriceRanges] = useState<DropdownOption[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState([]);
+  const [selectedBadges, setSelectedBadges] = useState([]);
+  const [selectedFaceShapes, setSelectedFaceShapes] = useState([]);
+  const [selectedBrands, setSelectedBrands] = useState([]);
+  const [selectedStyles, setSelectedStyles] = useState([]);
+  const [selectedPriceRanges, setSelectedPriceRanges] = useState([]);
 
   // Filter options
   const categories = [
@@ -120,7 +118,7 @@ export default function Shop() {
     }
     if (selectedFaceShapes.length > 0) {
       const vals = selectedFaceShapes.map((s) => s.value);
-      filtered = filtered.filter((p) => p.faceShapes?.some((shape: string) => vals.includes(shape)));
+      filtered = filtered.filter((p) => p.faceShapes?.some((shape) => vals.includes(shape)));
     }
     if (selectedPriceRanges.length > 0) {
       const rangeValues = selectedPriceRanges.map((r) => r.value);
@@ -147,7 +145,7 @@ export default function Shop() {
     return () => clearTimeout(timer);
   }, [searchQuery, selectedCategories, selectedBrands, selectedStyles, selectedFaceShapes, selectedPriceRanges, selectedBadges, products]);
 
-  const handleSearch = (query: string) => setSearchQuery(query);
+  const handleSearch = (query) => setSearchQuery(query);
 
   return (
     <main className="py-6 sm:py-8 md:py-12 lg:py-16 min-h-[60vh]">

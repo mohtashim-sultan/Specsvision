@@ -2,13 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Search, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-type SearchBarProps = {
-  onSearch: (query: string) => void;
-  placeholder?: string;
-  className?: string;
-};
-
-export default function SearchBar({ onSearch, placeholder = 'Search products...', className = '' }: SearchBarProps) {
+export default function SearchBar({ onSearch, placeholder = 'Search products...', className = '' }) {
   const [query, setQuery] = useState('');
 
   useEffect(() => {

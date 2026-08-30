@@ -2,18 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { ChevronDown, X, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-export type DropdownOption = { value: string; label: string };
-
-type DropdownProps = {
-  label?: string;
-  options?: DropdownOption[];
-  selected?: DropdownOption[];
-  onChange: (selected: DropdownOption[]) => void;
-  multiple?: boolean;
-  placeholder?: string;
-  className?: string;
-};
-
 export default function Dropdown({
   label,
   options = [],
@@ -22,13 +10,13 @@ export default function Dropdown({
   multiple = false,
   placeholder = 'Select...',
   className = '',
-}: DropdownProps) {
+}) {
   const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef(null);
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setIsOpen(false);
       }
     };
@@ -37,7 +25,7 @@ export default function Dropdown({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleSelect = (option: DropdownOption) => {
+  const handleSelect = (option) => {
     if (multiple) {
       const isSelected = selected.some((s) => s.value === option.value);
       if (isSelected) {
@@ -51,12 +39,12 @@ export default function Dropdown({
     }
   };
 
-  const handleClear = (e: React.MouseEvent) => {
+  const handleClear = (e) => {
     e.stopPropagation();
     onChange([]);
   };
 
-  const isSelected = (option: DropdownOption) => {
+  const isSelected = (option) => {
     return selected.some((s) => s.value === option.value);
   };
 

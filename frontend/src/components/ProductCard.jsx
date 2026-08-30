@@ -7,17 +7,15 @@ import { useWishlist } from '../context/WishlistContext';
 import { useCompare } from '../context/CompareContext';
 import { addCartItem } from '../api/cartApi';
 import { API_BASE } from '../config/env';
-import type { ProductCardProduct } from '../utils/storefrontProduct';
 import toast from 'react-hot-toast';
 
-export default function ProductCard({ product }: { product: ProductCardProduct }) {
+export default function ProductCard({ product }) {
   const navigate = useNavigate();
   const pointerStartRef = useRef({ x: 0, y: 0 });
 
   const { isAuthenticated, refreshCart } = useAuth();
   const { isWishlisted, toggle: toggleWishlist } = useWishlist();
-  const { has: isInCompare, toggle: toggleCompare } = useCompare();
-  const inCompare = isInCompare(product.id);
+  const { has: inCompare, toggle: toggleCompare } = useCompare();
   const wishlisted = isWishlisted(product.id);
 
   const modelSrc = useMemo(() => {
@@ -26,11 +24,11 @@ export default function ProductCard({ product }: { product: ProductCardProduct }
     return fv.startsWith('/') ? `${API_BASE}${fv}` : fv;
   }, [product]);
 
-  const handlePointerDown = (e: React.PointerEvent) => {
+  const handlePointerDown = (e) => {
     pointerStartRef.current = { x: e.clientX, y: e.clientY };
   };
 
-  const handlePointerUp = (e: React.PointerEvent) => {
+  const handlePointerUp = (e) => {
     const dx = Math.abs(e.clientX - pointerStartRef.current.x);
     const dy = Math.abs(e.clientY - pointerStartRef.current.y);
     if (dx < 6 && dy < 6) {
@@ -38,19 +36,19 @@ export default function ProductCard({ product }: { product: ProductCardProduct }
     }
   };
 
-  const handleWishlist = (e: React.MouseEvent) => {
+  const handleWishlist = (e) => {
     e.preventDefault();
     e.stopPropagation();
     toggleWishlist(product.id, product.name);
   };
 
-  const handleCompare = (e: React.MouseEvent) => {
+  const handleCompare = (e) => {
     e.preventDefault();
     e.stopPropagation();
     toggleCompare(product.id, product.name);
   };
 
-  const handleAddToCart = async (e: React.MouseEvent) => {
+  const handleAddToCart = async (e) => {
     e.preventDefault();
     e.stopPropagation();
     if (!isAuthenticated) {
@@ -62,7 +60,7 @@ export default function ProductCard({ product }: { product: ProductCardProduct }
       await refreshCart();
       toast.success(`${product.name} added to cart`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to add to cart");
+      toast.error(err.message || "Failed to add to cart");
     }
   };
 
@@ -187,7 +185,7 @@ export default function ProductCard({ product }: { product: ProductCardProduct }
           {/* Capped at three. faceShapes now carries every face shape a frame genuinely
               suits, which for a versatile category is five or six -- enough chips to wrap
               onto a third line and leave the grid with ragged card heights. */}
-          {product.faceShapes?.slice(0, 3).map((shape: string) => (
+          {product.faceShapes?.slice(0, 3).map((shape) => (
             <span
               key={shape}
               className="text-xs px-2 py-1 rounded-full"
@@ -199,7 +197,7 @@ export default function ProductCard({ product }: { product: ProductCardProduct }
               {shape}
             </span>
           ))}
-          {(product.faceShapes?.length ?? 0) > 3 && (
+          {product.faceShapes?.length > 3 && (
             <span
               className="text-xs px-2 py-1 rounded-full"
               style={{ backgroundColor: 'rgba(147,51,234,0.08)', color: 'var(--text-muted)' }}

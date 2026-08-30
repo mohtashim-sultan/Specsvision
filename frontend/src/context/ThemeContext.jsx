@@ -1,16 +1,9 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
-type Theme = 'light' | 'dark';
+const ThemeContext = createContext(null);
 
-type ThemeContextType = {
-  theme: Theme;
-  toggleTheme: () => void;
-};
-
-const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
-
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>(() => {
+export function ThemeProvider({ children }) {
+  const [theme, setTheme] = useState(() => {
     const saved = localStorage.getItem('specsvision_theme');
     return saved === 'dark' ? 'dark' : 'light';
   });
@@ -24,7 +17,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [theme]);
 
-  const toggleTheme = () => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
+  const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme }}>
@@ -33,7 +26,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function useTheme(): ThemeContextType {
+export function useTheme() {
   const ctx = useContext(ThemeContext);
   if (!ctx) throw new Error('useTheme must be used within ThemeProvider');
   return ctx;

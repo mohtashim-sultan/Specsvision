@@ -1,14 +1,7 @@
 import React from 'react';
 
-type SpinnerSize = 'sm' | 'md' | 'lg';
-
-type LoadingSpinnerProps = {
-  size?: SpinnerSize;
-  className?: string;
-};
-
-export default function LoadingSpinner({ size = 'md', className = '' }: LoadingSpinnerProps) {
-  const sizeClasses: Record<SpinnerSize, string> = {
+export default function LoadingSpinner({ size = 'md', className = '' }) {
+  const sizeClasses = {
     sm: 'w-6 h-6 border-2',
     md: 'w-12 h-12 border-[3px]',
     lg: 'w-16 h-16 border-[3px]',

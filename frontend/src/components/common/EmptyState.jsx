@@ -1,19 +1,11 @@
 import React from 'react';
-import type { LucideIcon } from 'lucide-react';
 
-type EmptyStateProps = {
-  icon: LucideIcon;
-  title?: string;
-  message?: string;
-  action?: React.ReactNode;
-};
-
-export default function EmptyState({
-  icon: Icon,
-  title = 'No items found',
+export default function EmptyState({ 
+  icon: Icon, 
+  title = 'No items found', 
   message = 'Try adjusting your search or filters',
-  action = null,
-}: EmptyStateProps) {
+  action = null 
+}) {
   return (
     <div className="flex flex-col items-center justify-center py-16 px-4">
       <div

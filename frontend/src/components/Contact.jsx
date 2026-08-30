@@ -39,12 +39,12 @@ const faqs = [
 export default function Contact() {
   const [form, setForm] = useState(initialForm);
 
-  const handleChange = (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, type, value, checked } = event.target as HTMLInputElement;
+  const handleChange = (event) => {
+    const { name, type, value, checked } = event.target;
     setForm((prev) => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
   };
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = (event) => {
     event.preventDefault();
     if (!form.name.trim() || !form.email.trim() || !form.message.trim()) {
       toast.error('Please add your name, email, and message.');

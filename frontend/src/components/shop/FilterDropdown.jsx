@@ -1,15 +1,7 @@
 import React from 'react';
-import Dropdown, { type DropdownOption } from '../common/Dropdown';
+import Dropdown from '../common/Dropdown';
 
-type FilterDropdownProps = {
-  label: string;
-  options: DropdownOption[];
-  selected: DropdownOption[];
-  onChange: (selected: DropdownOption[]) => void;
-  multiple?: boolean;
-};
-
-export default function FilterDropdown({ label, options, selected, onChange, multiple = true }: FilterDropdownProps) {
+export default function FilterDropdown({ label, options, selected, onChange, multiple = true }) {
   return (
     <div className="w-full min-w-0">
       <label className="block text-[11px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-muted)' }}>
