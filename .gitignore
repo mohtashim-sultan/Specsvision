@@ -28,3 +28,12 @@ venv/
 /backend/**/*.pyc
 /backend/db.sqlite3
 /backend/.env
+
+# Local development artifacts (never deployed)
+/backend/specsvision.db
+*.sqlite3
+*.db
+
+# Local environment files -- copy .env.example and fill in per environment
+/frontend/.env
+/frontend/.env.local
