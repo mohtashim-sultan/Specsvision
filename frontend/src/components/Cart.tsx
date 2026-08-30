@@ -8,11 +8,18 @@ import { fetchCart, removeCartLine, setCartLineQuantity } from '../api/cartApi';
 import toast from 'react-hot-toast';
 import { displayImageUrl } from '../utils/storefrontProduct';
 import LoadingSpinner from './common/LoadingSpinner';
+import type { Product } from '../types/api';
+
+/** A cart row as this page holds it: price coerced to a number, image resolved once. */
+type CartRow = {
+  product: Omit<Product, 'price'> & { price: number; image: string };
+  quantity: number;
+};
 
 export default function Cart() {
   const { isAuthenticated, refreshCart } = useAuth();
   const navigate = useNavigate();
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState<CartRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadCartData = async () => {
@@ -28,7 +35,7 @@ export default function Cart() {
       }));
       setItems(mapped);
     } catch (err) {
-      toast.error(err.message || "Could not load cart");
+      toast.error(err instanceof Error ? err.message : "Could not load cart");
     } finally {
       setLoading(false);
     }
@@ -42,7 +49,7 @@ export default function Cart() {
     loadCartData();
   }, [isAuthenticated]);
 
-  const updateQuantity = async (productId, delta) => {
+  const updateQuantity = async (productId: number, delta: number) => {
     const currentItem = items.find(item => item.product.id === productId);
     if (!currentItem) return;
     const nextQty = currentItem.quantity + delta;
@@ -52,12 +59,12 @@ export default function Cart() {
       await loadCartData();
       await refreshCart();
     } catch (err) {
-      toast.error(err.message || "Failed to update quantity");
+      toast.error(err instanceof Error ? err.message : "Failed to update quantity");
       setLoading(false);
     }
   };
 
-  const removeItem = async (productId) => {
+  const removeItem = async (productId: number) => {
     try {
       setLoading(true);
       await removeCartLine(productId);
@@ -65,7 +72,7 @@ export default function Cart() {
       await refreshCart();
       toast.success("Item removed from cart");
     } catch (err) {
-      toast.error(err.message || "Failed to remove item");
+      toast.error(err instanceof Error ? err.message : "Failed to remove item");
       setLoading(false);
     }
   };
@@ -168,7 +175,7 @@ export default function Cart() {
                     style={{ backgroundColor: 'var(--surface-bg-secondary)' }}
                   >
                     <img
-                      src={displayImageUrl(item.product)}
+                      src={item.product.image}
                       alt={item.product.name}
                       className="w-full h-full object-cover"
                     />

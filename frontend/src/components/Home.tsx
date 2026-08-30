@@ -5,6 +5,7 @@ import ProductCard from './ProductCard';
 import { motion } from 'framer-motion';
 import { fetchProducts } from '../api/productsApi';
 import { displayImageUrl, displayBadge, displayFaceShapes } from '../utils/storefrontProduct';
+import type { ProductCardProduct } from '../utils/storefrontProduct';
 
 const stats = [
   { icon: Eye, value: '1M+', label: 'Virtual Try-Ons' },
@@ -13,7 +14,7 @@ const stats = [
 ];
 
 export default function Home() {
-  const [products, setProducts] = useState([]);
+  const [products, setProducts] = useState<ProductCardProduct[]>([]);
 
   useEffect(() => {
     let cancelled = false;

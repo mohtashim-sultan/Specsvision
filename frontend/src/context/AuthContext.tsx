@@ -2,10 +2,26 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { loginRequest, signupRequest, fetchCurrentUser, fetchCurrentAdmin, logoutClient } from '../api/authApi';
 import { fetchCart } from '../api/cartApi';
 import { getStoredToken, getStoredRole, setStoredRole } from '../api/http';
+import type { Admin, User } from '../types/api';
 
-const AuthContext = createContext();
+export type SessionRole = 'user' | 'admin';
 
-export const useAuth = () => {
+type AuthContextType = {
+  user: User | Admin | null;
+  admin: Admin | null;
+  isAdmin: boolean;
+  loading: boolean;
+  cartCount: number;
+  login: (email: string, password: string) => Promise<SessionRole>;
+  register: (userData: { email: string; password: string; name?: string | null }) => Promise<SessionRole>;
+  logout: () => void;
+  refreshCart: () => Promise<void>;
+  isAuthenticated: boolean;
+};
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (!context) {
     throw new Error('useAuth must be used within an AuthProvider');
@@ -13,9 +29,9 @@ export const useAuth = () => {
   return context;
 };
 
-export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [admin, setAdmin] = useState(null);
+export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [admin, setAdmin] = useState<Admin | null>(null);
   const [loading, setLoading] = useState(true);
   const [cartCount, setCartCount] = useState(0);
 
@@ -91,7 +107,7 @@ export const AuthProvider = ({ children }) => {
     };
   }, [hydrateFromToken]);
 
-  const login = useCallback(async (email, password) => {
+  const login = useCallback(async (email: string, password: string): Promise<SessionRole> => {
     const data = await loginRequest(email, password);
     if (data.role === 'admin') {
       const me = await fetchCurrentAdmin();
@@ -107,7 +123,7 @@ export const AuthProvider = ({ children }) => {
     return 'user';
   }, [refreshCart]);
 
-  const register = useCallback(async (userData) => {
+  const register = useCallback(async (userData: { email: string; password: string; name?: string | null }): Promise<SessionRole> => {
     const { email, password, name } = userData;
     // signupRequest stores the token, so the session has to be hydrated here exactly as
     // login does it — otherwise the user holds a valid token while the app still thinks

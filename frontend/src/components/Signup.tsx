@@ -1,33 +1,40 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Sparkles, Mail, Lock, ArrowRight, Glasses } from 'lucide-react';
+import { Eye, EyeOff, Sparkles, Mail, Lock, User, ArrowRight, Glasses, CheckCircle2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 
-export default function Login() {
+export default function Signup() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { register } = useAuth();
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const onSubmit = async (e) => {
+  const passwordStrength = (() => {
+    if (!password) return { level: 0, text: '', color: '' };
+    if (password.length < 6) return { level: 1, text: 'Weak', color: 'bg-red-400' };
+    if (password.length < 8) return { level: 2, text: 'Fair', color: 'bg-amber-400' };
+    if (password.length >= 8 && /[A-Z]/.test(password) && /[0-9]/.test(password))
+      return { level: 3, text: 'Strong', color: 'bg-green-400' };
+    return { level: 2, text: 'Good', color: 'bg-yellow-400' };
+  })();
+
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (!email || !password) return setError('Please fill both fields');
+    if (!name || !email || !password) return setError('All fields required');
     
     setIsLoading(true);
     try {
-      const role = await login(email, password);
-      if (role === 'admin') {
-        navigate('/admin');
-      } else {
-        navigate('/');
-      }
+      await register({ email, password, name });
+      // Signed in already — same destination as a successful login.
+      navigate('/');
     } catch (err) {
-      setError(err.message || 'Login failed');
+      setError(err instanceof Error ? err.message : 'Signup failed');
     } finally {
       setIsLoading(false);
     }
@@ -42,23 +49,23 @@ export default function Login() {
         className="w-full max-w-4xl grid grid-cols-1 lg:grid-cols-2 bg-white rounded-3xl shadow-2xl overflow-hidden border border-purple-100/50"
       >
         {/* Left Panel - Brand / Visual */}
-        <div className="relative hidden lg:flex flex-col items-center justify-center p-10 overflow-hidden bg-gradient-to-br from-purple-700 via-purple-600 to-pink-600">
+        <div className="relative hidden lg:flex flex-col items-center justify-center p-10 overflow-hidden bg-gradient-to-br from-pink-600 via-purple-600 to-purple-700">
           {/* Animated background orbs */}
           <div className="absolute inset-0 overflow-hidden">
             <motion.div
-              animate={{ x: [0, 30, 0], y: [0, -20, 0] }}
-              transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
-              className="absolute top-10 left-10 w-32 h-32 bg-white/10 rounded-full blur-xl"
+              animate={{ x: [0, -25, 0], y: [0, 20, 0] }}
+              transition={{ duration: 9, repeat: Infinity, ease: "easeInOut" }}
+              className="absolute top-16 right-10 w-36 h-36 bg-white/10 rounded-full blur-xl"
             />
             <motion.div
-              animate={{ x: [0, -20, 0], y: [0, 30, 0] }}
-              transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
-              className="absolute bottom-20 right-10 w-40 h-40 bg-pink-300/15 rounded-full blur-xl"
+              animate={{ x: [0, 20, 0], y: [0, -25, 0] }}
+              transition={{ duration: 11, repeat: Infinity, ease: "easeInOut" }}
+              className="absolute bottom-16 left-10 w-28 h-28 bg-pink-300/15 rounded-full blur-xl"
             />
             <motion.div
-              animate={{ x: [0, 15, 0], y: [0, 15, 0] }}
-              transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-              className="absolute top-1/2 left-1/3 w-24 h-24 bg-purple-300/10 rounded-full blur-lg"
+              animate={{ scale: [1, 1.2, 1], opacity: [0.1, 0.2, 0.1] }}
+              transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
+              className="absolute top-1/3 left-1/4 w-40 h-40 bg-purple-300/10 rounded-full blur-2xl"
             />
           </div>
 
@@ -78,37 +85,45 @@ export default function Login() {
               transition={{ delay: 0.4 }}
               className="text-3xl font-bold text-white mb-3"
             >
-              SpecsVision
+              Join SpecsVision
             </motion.h1>
             <motion.p
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.5 }}
-              className="text-purple-100 text-base max-w-xs mx-auto leading-relaxed"
+              className="text-purple-100 text-base max-w-xs mx-auto leading-relaxed mb-8"
             >
-              Try before you buy with our AI-powered virtual try-on experience
+              Create your account and discover the perfect eyewear for you
             </motion.p>
 
-            {/* Feature pills */}
+            {/* Benefits list */}
             <motion.div
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.6 }}
-              className="mt-8 flex flex-wrap justify-center gap-2"
+              className="space-y-3 text-left max-w-[220px] mx-auto"
             >
-              {['Virtual Try-On', 'AI Powered', '500+ Frames'].map((feat) => (
-                <span
-                  key={feat}
-                  className="px-3 py-1.5 bg-white/10 backdrop-blur-sm border border-white/20 rounded-full text-xs text-white/90 font-medium"
+              {[
+                'Free virtual try-on',
+                'Personalized recommendations',
+                'Exclusive member deals',
+              ].map((benefit, i) => (
+                <motion.div
+                  key={benefit}
+                  initial={{ x: -15, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ delay: 0.7 + i * 0.1 }}
+                  className="flex items-center gap-3"
                 >
-                  {feat}
-                </span>
+                  <CheckCircle2 className="w-5 h-5 text-green-300 flex-shrink-0" />
+                  <span className="text-sm text-white/90 font-medium">{benefit}</span>
+                </motion.div>
               ))}
             </motion.div>
           </div>
         </div>
 
-        {/* Right Panel - Login Form */}
+        {/* Right Panel - Signup Form */}
         <div className="p-6 sm:p-8 md:p-10 lg:p-12 flex flex-col justify-center">
           {/* Mobile logo */}
           <div className="lg:hidden text-center mb-6">
@@ -122,11 +137,29 @@ export default function Login() {
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.2 }}
           >
-            <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">Welcome back</h2>
-            <p className="text-gray-500 text-sm sm:text-base mb-6 sm:mb-8">Sign in to continue to your account</p>
+            <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">Create account</h2>
+            <p className="text-gray-500 text-sm sm:text-base mb-6 sm:mb-8">Start your journey with SpecsVision</p>
           </motion.div>
 
-          <form onSubmit={onSubmit} className="space-y-5">
+          <form onSubmit={onSubmit} className="space-y-4 sm:space-y-5">
+            {/* Name field */}
+            <motion.div
+              initial={{ y: 15, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.25 }}
+            >
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Full name</label>
+              <div className="relative group">
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-purple-500 transition-colors" />
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full pl-12 pr-4 py-3.5 rounded-xl border-2 border-gray-200 focus:border-purple-500 focus:ring-4 focus:ring-purple-100 transition-all outline-none text-gray-900 placeholder-gray-400 bg-gray-50/50 focus:bg-white"
+                  placeholder="John Doe"
+                />
+              </div>
+            </motion.div>
+
             {/* Email field */}
             <motion.div
               initial={{ y: 15, opacity: 0 }}
@@ -160,7 +193,7 @@ export default function Login() {
                   onChange={(e) => setPassword(e.target.value)}
                   type={showPassword ? 'text' : 'password'}
                   className="w-full pl-12 pr-12 py-3.5 rounded-xl border-2 border-gray-200 focus:border-purple-500 focus:ring-4 focus:ring-purple-100 transition-all outline-none text-gray-900 placeholder-gray-400 bg-gray-50/50 focus:bg-white"
-                  placeholder="Enter your password"
+                  placeholder="Create a password"
                 />
                 <button
                   type="button"
@@ -170,6 +203,36 @@ export default function Login() {
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
+              {/* Password strength indicator */}
+              {password && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="mt-2.5"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 flex gap-1">
+                      {[1, 2, 3].map((level) => (
+                        <div
+                          key={level}
+                          className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
+                            level <= passwordStrength.level
+                              ? passwordStrength.color
+                              : 'bg-gray-200'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                    <span className={`text-xs font-medium ${
+                      passwordStrength.level === 1 ? 'text-red-500' :
+                      passwordStrength.level === 2 ? 'text-amber-500' :
+                      passwordStrength.level === 3 ? 'text-green-500' : 'text-gray-400'
+                    }`}>
+                      {passwordStrength.text}
+                    </span>
+                  </div>
+                </motion.div>
+              )}
             </motion.div>
 
             {/* Error message */}
@@ -199,7 +262,7 @@ export default function Login() {
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 ) : (
                   <>
-                    Sign in
+                    Create account
                     <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
                   </>
                 )}
@@ -217,21 +280,21 @@ export default function Login() {
                 <div className="w-full border-t border-gray-200" />
               </div>
               <div className="relative flex justify-center text-xs">
-                <span className="px-3 bg-white text-gray-400 font-medium">New to SpecsVision?</span>
+                <span className="px-3 bg-white text-gray-400 font-medium">Already have an account?</span>
               </div>
             </motion.div>
 
-            {/* Create account link */}
+            {/* Login link */}
             <motion.div
               initial={{ y: 15, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.55 }}
             >
               <Link
-                to="/signup"
+                to="/login"
                 className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl border-2 border-gray-200 text-gray-700 font-semibold hover:border-purple-300 hover:text-purple-700 hover:bg-purple-50/50 transition-all duration-300 min-h-[48px] group"
               >
-                Create an account
+                Sign in instead
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
               </Link>
             </motion.div>

@@ -4,17 +4,21 @@ import { SHAPE_GUIDE, type FaceShape } from "../components/ar/faceShape";
 
 const BADGES = ["Best Seller", "New", "Trending", "Sale"] as const;
 
-/** Display model for legacy ProductCard / cart rows (API has no badge/rating). */
-export type StorefrontProduct = Product & {
-  displayImage: string;
-  displayBadge: string;
-  displayFaceShapes: string[];
+/** The shape ProductCard renders: an API product plus the display fields the grid needs. */
+export type ProductCardProduct = Product & {
   image: string;
   badge: string;
   faceShapes: string[];
   rating: number;
   reviews: number;
   originalPrice: number | null;
+};
+
+/** Display model for legacy ProductCard / cart rows (API has no badge/rating). */
+export type StorefrontProduct = ProductCardProduct & {
+  displayImage: string;
+  displayBadge: string;
+  displayFaceShapes: string[];
   brand: string;
   style: string;
 };

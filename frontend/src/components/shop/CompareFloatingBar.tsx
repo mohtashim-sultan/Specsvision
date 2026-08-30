@@ -5,10 +5,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useCompare } from '../../context/CompareContext';
 import { fetchProduct } from '../../api/productsApi';
 import { displayImageUrl } from '../../utils/storefrontProduct';
+import type { Product } from '../../types/api';
 
 export default function CompareFloatingBar() {
   const { ids, count, clear } = useCompare();
-  const [previewProducts, setPreviewProducts] = useState([]);
+  const [previewProducts, setPreviewProducts] = useState<Product[]>([]);
 
   useEffect(() => {
     if (ids.length === 0) {
@@ -18,7 +19,7 @@ export default function CompareFloatingBar() {
     let cancelled = false;
     Promise.all(ids.slice(0, 4).map((id) => fetchProduct(id).catch(() => null))).then((res) => {
       if (!cancelled) {
-        setPreviewProducts(res.filter(Boolean));
+        setPreviewProducts(res.filter((p): p is Product => p !== null));
       }
     });
     return () => {

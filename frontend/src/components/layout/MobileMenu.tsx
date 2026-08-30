@@ -5,7 +5,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { useCompare } from '../../context/CompareContext';
 
-export default function MobileMenu({ isOpen, onClose }) {
+type MobileMenuProps = {
+  isOpen: boolean;
+  onClose: () => void;
+};
+
+export default function MobileMenu({ isOpen, onClose }: MobileMenuProps) {
   const { isAuthenticated, user, logout } = useAuth();
   const { count: compareCount } = useCompare();
   const location = useLocation();
@@ -99,7 +104,7 @@ export default function MobileMenu({ isOpen, onClose }) {
                     >
                       <Icon className="w-5 h-5 flex-shrink-0" style={{ color: 'var(--text-accent)' }} />
                       <span className="font-medium">{item.label}</span>
-                      {Boolean(item.badge) && item.badge > 0 && (
+                      {(item.badge ?? 0) > 0 && (
                         <span className="ml-auto bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow-sm">
                           {item.badge}
                         </span>
@@ -122,7 +127,7 @@ export default function MobileMenu({ isOpen, onClose }) {
                       <User className="w-5 h-5 text-white" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{user?.full_name || user?.username || 'User'}</p>
+                      <p className="font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{user?.full_name || 'User'}</p>
                       <p className="text-sm truncate" style={{ color: 'var(--text-muted)' }}>{user?.email}</p>
                     </div>
                   </div>
