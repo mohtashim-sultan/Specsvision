@@ -37,31 +37,42 @@ function dist(a: Pt, b: Pt): number {
  * Classification cuts, calibrated against MindAR's canonical-face-model.obj — the
  * statistically average face — which measures lw 1.1525, fRatio 0.9248, jRatio 0.7751.
  *
- * The previous set was not calibrated, and the result was a label that could not sit still:
- * the average face missed the Round cut by 0.22% (lw 1.1525 against 1.15), so with only
- * ±0.5% landmark noise the classification flipped on a third of consecutive samples. Heart
- * was worse — it required `fRatio >= 0.95 AND jRatio <= 0.82`, but an average jaw of 0.7751
- * already satisfies the second condition, so Heart hinged on brow width alone and the whole
- * Oval band was ±2.7% wide.
+ * These sit roughly half to one population standard deviation from canonical. Two earlier
+ * sets both failed, in opposite directions.
  *
- * Every cut below is a deliberate percentage away from canonical, so an average face lands
- * mid-Oval with room on all sides and noise alone cannot move it.
+ * The first was uncalibrated: the average face missed the Round cut by 0.22% (lw 1.1525
+ * against 1.15), so at only ±0.5% landmark noise the label flipped on a third of consecutive
+ * samples, and Heart required `jRatio <= 0.82` which an average jaw of 0.7751 already
+ * satisfies — so Heart hinged on brow width alone.
+ *
+ * The second over-corrected. Every cut was pushed one-and-a-half to three deviations out to
+ * survive ±1% landmark noise, and Oval then swallowed everyone: fRatio and jRatio could move
+ * by ANY amount without leaving Oval on their own, because Diamond, Heart and Square each
+ * require two or three ratios to be far from average SIMULTANEOUSLY. Only lw still decided
+ * anything, across a 21%-wide Oval corridor. Simulated over 200k faces, 86% classified Oval
+ * at ±5% population spread and 98% at ±3%.
+ *
+ * Widening the cuts was the wrong defence, because FaceShapeStabilizer below had already
+ * removed that noise in the same change — it classifies the MEDIAN of up to 60 samples,
+ * which attenuates ±1% landmark noise by roughly 8x. The noise was defended against twice,
+ * and the second defence cost all of the discriminating power. The stabiliser is what keeps
+ * the label still; these cuts only have to separate real faces.
  *
  * Note W is measured at 234/454, which sit at ear level rather than on the cheekbone, so
  * these ratios read lower than published anthropometric ones. They are internally
  * consistent, not comparable to outside tables.
  */
 export const SHAPE_CUTS = {
-  oblongLw: 1.32, // +14.5% longer than average
-  diamondF: 0.88, // -4.9% narrower brow
-  diamondJ: 0.74, // -4.5% narrower jaw
-  diamondLw: 1.12,
-  heartF: 0.98, // +5.9% wider brow
-  heartJ: 0.72, // -7.1% narrower jaw
-  roundLw: 1.08, // -6.3% shorter than average
-  roundSquareJ: 0.82,
-  squareJ: 0.86, // +10.9% wider jaw
-  squareF: 0.95, // +2.7% wider brow
+  oblongLw: 1.215, // +5.4% longer than average
+  diamondF: 0.906, // -2.0% narrower brow
+  diamondJ: 0.762, // -1.7% narrower jaw
+  diamondLw: 1.13, // -2.0%: cheekbones lead only on a face that is not short
+  heartF: 0.944, // +2.1% wider brow
+  heartJ: 0.762, // -1.7% narrower jaw
+  roundLw: 1.098, // -4.7% shorter than average
+  roundSquareJ: 0.79, // +1.9%: splits a short face into Square (strong jaw) or Round
+  squareJ: 0.8, // +3.2% wider jaw
+  squareF: 0.93, // +0.6% wider brow
 } as const;
 
 export type Ratios = { lw: number; fRatio: number; jRatio: number };
@@ -192,28 +203,38 @@ export type ShapeFit = {
 /**
  * Per-shape refinements applied on top of the measured fit.
  *
- * These are REFINEMENTS, not the sizing mechanism. Face shape describes a length-to-width
- * proportion; it says nothing about absolute head size, so two people who are both "Oval"
- * can need frames 20mm apart. Width therefore comes from the measured cheek/eye signal, and
- * shape only adjusts how the frame is proportioned and seated on that face — which is the
- * part an optician actually adjusts by eye.
+ * NEUTRAL for every shape, deliberately. Face shape drives the label and the frame
+ * recommendations; it does not move the rendered frame.
  *
- * Magnitudes are held under 2% on width and 0.6% of eye distance on seating for that reason:
+ * Shape describes a length-to-width proportion and says nothing about absolute head size, so
+ * two people who are both "Oval" can need frames 20mm apart. Sizing therefore comes entirely
+ * from the measured cheek/eye signal, which is the signal that actually varies per person.
+ *
+ * These entries were non-neutral while the cuts above were classifying ~98% of users as
+ * Oval, so in practice they never fired. Recalibrating those cuts would have woken them up
+ * and silently moved the frame by up to 2% for the majority of users — a rendering change
+ * arriving as a side effect of a classification fix. Zeroed instead, so the recalibration is
+ * provably label-only.
+ *
+ * The table is kept, rather than deleted along with its call sites in TryOnViewer, so that
+ * re-enabling a nudge is a change to these numbers alone. Previous values are noted per
+ * line. If you re-enable one, keep it under 2% on width and 0.6% of eye distance on seating:
  * enough to see, not enough to override a real measurement.
  */
 export const SHAPE_FIT: Record<FaceShape, ShapeFit> = {
-  // Reference shape — the baseline everything else is expressed against.
+  // Reference shape — the baseline everything else was expressed against.
   Oval: { widthScale: 1.0, seatOffset: 0.0 },
-  // Short and wide: a fractionally wider frame adds the definition a round face lacks.
-  Round: { widthScale: 1.02, seatOffset: 0.0 },
-  // Strong jaw already carries width; keep the frame honest and let the shape read.
+  // Short and wide: a fractionally wider frame adds definition. (was widthScale 1.02)
+  Round: { widthScale: 1.0, seatOffset: 0.0 },
+  // Strong jaw already carries width; the frame stays honest either way.
   Square: { widthScale: 1.0, seatOffset: 0.0 },
-  // Broad brow, narrow chin: slightly narrower and seated a touch higher balances the top.
-  Heart: { widthScale: 0.985, seatOffset: -0.004 },
-  // Widest at the cheekbones: neutral width, the frame's job is to soften mid-face.
-  Diamond: { widthScale: 0.995, seatOffset: 0.0 },
-  // Long face: seating lower shortens the apparent length rather than emphasising it.
-  Oblong: { widthScale: 1.0, seatOffset: 0.006 },
+  // Broad brow, narrow chin: narrower and seated higher balances the top.
+  // (was widthScale 0.985, seatOffset -0.004)
+  Heart: { widthScale: 1.0, seatOffset: 0.0 },
+  // Widest at the cheekbones: the frame's job is to soften mid-face. (was widthScale 0.995)
+  Diamond: { widthScale: 1.0, seatOffset: 0.0 },
+  // Long face: seating lower shortens the apparent length. (was seatOffset 0.006)
+  Oblong: { widthScale: 1.0, seatOffset: 0.0 },
 };
 
 export type ShapeGuide = {
