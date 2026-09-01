@@ -345,7 +345,7 @@ function CheckoutFormContent({
               Processing Payment...
             </>
           ) : (
-            `Pay $${total.toFixed(2)} & Complete Order`
+            `Pay Rs. ${total.toLocaleString()} & Complete Order`
           )}
         </button>
       </motion.form>
@@ -368,9 +368,9 @@ function CheckoutFormContent({
             <li key={item.id} className="py-3 flex items-center justify-between text-sm gap-2" style={{ borderColor: 'var(--border-color)' }}>
               <div className="min-w-0 flex-1">
                 <span className="font-semibold block truncate" style={{ color: 'var(--text-primary)' }}>{item.product.name}</span>
-                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Qty: {item.quantity} · ${Number(item.product.price).toFixed(2)}</span>
+                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Qty: {item.quantity} · Rs. {Number(item.product.price).toLocaleString()}</span>
               </div>
-              <span className="font-bold" style={{ color: 'var(--text-primary)' }}>${(Number(item.product.price) * item.quantity).toFixed(2)}</span>
+              <span className="font-bold" style={{ color: 'var(--text-primary)' }}>Rs. {(Number(item.product.price) * item.quantity).toLocaleString()}</span>
             </li>
           ))}
         </ul>
@@ -378,27 +378,27 @@ function CheckoutFormContent({
         <div className="pt-4 space-y-3 text-sm" style={{ borderTop: '1px solid var(--border-color)' }}>
           <div className="flex justify-between">
             <span style={{ color: 'var(--text-secondary)' }}>Subtotal</span>
-            <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>${subtotal.toFixed(2)}</span>
+            <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>Rs. {subtotal.toLocaleString()}</span>
           </div>
           {discount > 0 && (
             <div className="flex justify-between">
               <span style={{ color: 'var(--text-secondary)' }}>Discount</span>
-              <span className="font-semibold" style={{ color: '#22c55e' }}>-${discount.toFixed(2)}</span>
+              <span className="font-semibold" style={{ color: '#22c55e' }}>-Rs. {discount.toLocaleString()}</span>
             </div>
           )}
           <div className="flex justify-between">
             <span style={{ color: 'var(--text-secondary)' }}>Tax (8%)</span>
-            <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>${tax.toFixed(2)}</span>
+            <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>Rs. {tax.toLocaleString()}</span>
           </div>
           <div className="flex justify-between">
             <span style={{ color: 'var(--text-secondary)' }}>Shipping</span>
             <span className="font-semibold" style={{ color: shipping === 0 ? '#22c55e' : 'var(--text-primary)' }}>
-              {shipping === 0 ? 'Free' : `$${shipping.toFixed(2)}`}
+              {shipping === 0 ? 'Free' : `Rs. ${shipping.toLocaleString()}`}
             </span>
           </div>
           <div className="pt-3 flex justify-between items-center" style={{ borderTop: '1px solid var(--border-color)' }}>
             <span className="font-bold" style={{ color: 'var(--text-primary)' }}>Total</span>
-            <span className="text-xl font-bold" style={{ color: 'var(--text-accent)' }}>${total.toFixed(2)}</span>
+            <span className="text-xl font-bold" style={{ color: 'var(--text-accent)' }}>Rs. {total.toLocaleString()}</span>
           </div>
         </div>
 

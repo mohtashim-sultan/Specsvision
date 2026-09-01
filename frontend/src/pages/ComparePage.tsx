@@ -7,7 +7,11 @@ import { displayImageUrl } from "../utils/storefrontProduct";
 import type { Product } from "../types/api";
 import LoadingSpinner from "../components/common/LoadingSpinner";
 
-const money = (p: string) => `$${Number(p).toFixed(2)}`;
+const money = (p: string) => {
+  const n = Number(p);
+  if (Number.isNaN(n)) return p;
+  return `Rs. ${n.toLocaleString()}`;
+};
 
 export default function ComparePage() {
   const { ids, remove, clear } = useCompare();

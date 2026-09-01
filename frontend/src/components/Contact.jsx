@@ -24,10 +24,10 @@ const initialForm = {
 };
 
 const tryOnProducts = [
-  { name: 'Archer', price: '$129' },
-  { name: 'Marin', price: '$149' },
-  { name: 'Lucent', price: '$169' },
-  { name: 'Harper', price: '$159' },
+  { name: 'Archer', price: 'Rs. 129' },
+  { name: 'Marin', price: 'Rs. 149' },
+  { name: 'Lucent', price: 'Rs. 169' },
+  { name: 'Harper', price: 'Rs. 159' },
 ];
 
 const faqs = [

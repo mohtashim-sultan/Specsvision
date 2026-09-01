@@ -224,7 +224,7 @@ export default function UserProfilePage() {
                         <div className="flex items-center gap-4">
                           <div className="text-right">
                             <span className="block text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Total Price</span>
-                            <span className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>${Number(order.total).toFixed(2)}</span>
+                            <span className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>Rs. {Number(order.total).toLocaleString()}</span>
                           </div>
                           <div className="flex items-center gap-3">
                             {getStatusBadge(order.status)}
@@ -245,10 +245,10 @@ export default function UserProfilePage() {
                                 <div className="min-w-0 flex-1 pr-4">
                                   <span className="font-semibold block truncate" style={{ color: 'var(--text-primary)' }}>{item.product_name}</span>
                                   <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                    Qty: {item.quantity} · Price: ${Number(item.unit_price).toFixed(2)}
+                                    Qty: {item.quantity} · Price: Rs. {Number(item.unit_price).toLocaleString()}
                                   </span>
                                 </div>
-                                <span className="font-bold" style={{ color: 'var(--text-primary)' }}>${Number(item.line_total).toFixed(2)}</span>
+                                <span className="font-bold" style={{ color: 'var(--text-primary)' }}>Rs. {Number(item.line_total).toLocaleString()}</span>
                               </li>
                             ))}
                           </ul>

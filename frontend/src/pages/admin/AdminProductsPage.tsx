@@ -8,7 +8,7 @@ import type { Product } from "../../types/api";
 function formatPrice(p: string) {
   const n = Number(p);
   if (Number.isNaN(n)) return p;
-  return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(n);
+  return `Rs. ${n.toLocaleString()}`;
 }
 
 export default function AdminProductsPage() {

@@ -17,7 +17,7 @@ const statusColors: Record<string, { bg: string; text: string }> = {
 function formatPrice(p: string) {
   const n = Number(p);
   if (Number.isNaN(n)) return p;
-  return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(n);
+  return `Rs. ${n.toLocaleString()}`;
 }
 
 function formatDate(iso: string) {

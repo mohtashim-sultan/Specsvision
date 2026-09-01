@@ -53,10 +53,10 @@ export default function Shop() {
     { value: 'Retro', label: 'Retro' },
   ];
   const priceRanges = [
-    { value: 'under-50', label: 'Under $50' },
-    { value: '50-80', label: '$50 to $80' },
-    { value: '80-100', label: '$80 to $100' },
-    { value: 'over-100', label: 'Over $100' },
+    { value: 'under-50', label: 'Under Rs. 50' },
+    { value: '50-80', label: 'Rs. 50 to Rs. 80' },
+    { value: '80-100', label: 'Rs. 80 to Rs. 100' },
+    { value: 'over-100', label: 'Over Rs. 100' },
   ];
   const badges = [
     { value: 'Best Seller', label: 'Best Seller' },

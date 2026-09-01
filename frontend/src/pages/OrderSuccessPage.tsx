@@ -119,9 +119,9 @@ export default function OrderSuccessPage() {
                   <li key={idx} className="py-3 flex justify-between items-center text-sm gap-2">
                     <div className="min-w-0 flex-1">
                       <span className="font-semibold text-gray-800 block truncate">{item.product_name}</span>
-                      <span className="text-xs text-gray-400">Qty: {item.quantity} · ${Number(item.unit_price).toFixed(2)}</span>
+                      <span className="text-xs text-gray-400">Qty: {item.quantity} · Rs. {Number(item.unit_price).toLocaleString()}</span>
                     </div>
-                    <span className="font-bold text-gray-900">${Number(item.line_total).toFixed(2)}</span>
+                    <span className="font-bold text-gray-900">Rs. {Number(item.line_total).toLocaleString()}</span>
                   </li>
                 ))}
               </ul>
@@ -131,7 +131,7 @@ export default function OrderSuccessPage() {
             <div className="pt-4 border-t border-purple-50 space-y-2.5 text-sm max-w-sm ml-auto">
               <div className="flex justify-between text-gray-600">
                 <span>Subtotal</span>
-                <span className="font-medium text-gray-900">${Number(order.total).toFixed(2)}</span>
+                <span className="font-medium text-gray-900">Rs. {Number(order.total).toLocaleString()}</span>
               </div>
               <div className="flex justify-between text-gray-600">
                 <span>Shipping</span>
@@ -139,7 +139,7 @@ export default function OrderSuccessPage() {
               </div>
               <div className="border-t border-purple-50 pt-2 flex justify-between items-center">
                 <span className="font-bold text-gray-900 text-base">Total Amount</span>
-                <span className="text-lg font-bold text-purple-600">${Number(order.total).toFixed(2)}</span>
+                <span className="text-lg font-bold text-purple-600">Rs. {Number(order.total).toLocaleString()}</span>
               </div>
             </div>
           </div>
