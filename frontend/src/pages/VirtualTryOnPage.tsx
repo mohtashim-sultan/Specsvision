@@ -8,6 +8,7 @@ import type { Product } from "../types/api";
 import { displayImageUrl } from "../utils/storefrontProduct";
 import { isBestFit, SHAPE_GUIDE, type FaceShape } from "../components/ar/faceShape";
 import { API_BASE } from "../config/env";
+import LoadingSpinner from "../components/common/LoadingSpinner";
 
 // ── Types & Defaults ──────────────────────────────────────────────────────────
 
@@ -985,10 +986,8 @@ export default function VirtualTryOnPage() {
         {/* Catalog List */}
         <div className="flex-1 overflow-y-auto min-h-0 px-3 py-3 space-y-2.5 custom-scrollbar">
           {loadingCatalog ? (
-            <div className="flex flex-col gap-2 pt-2">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="h-[72px] rounded-2xl bg-slate-900/60 animate-pulse" />
-              ))}
+            <div className="flex items-center justify-center py-12">
+              <LoadingSpinner size="md" message="Loading frames…" />
             </div>
           ) : filteredProducts.length === 0 ? (
             <div className="py-12 text-center text-xs text-slate-500">
@@ -1086,9 +1085,9 @@ export default function VirtualTryOnPage() {
 
         <div className="flex gap-3 overflow-x-auto px-4 pt-1 pb-[max(1rem,env(safe-area-inset-bottom))] snap-x snap-mandatory scrollbar-none">
           {loadingCatalog ? (
-            [...Array(4)].map((_, i) => (
-              <div key={i} className="w-[88px] h-[100px] shrink-0 rounded-xl bg-slate-900 animate-pulse" />
-            ))
+            <div className="flex items-center justify-center w-full py-6">
+              <LoadingSpinner size="sm" message="Loading…" />
+            </div>
           ) : filteredProducts.length === 0 ? (
             <div className="py-6 text-center text-[10px] text-slate-500 w-full">
               No products found.
