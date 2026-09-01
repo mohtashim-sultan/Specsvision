@@ -15,6 +15,7 @@ export default function Shop() {
   const [products, setProducts] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [initialFetchDone, setInitialFetchDone] = useState(false);
   // A failed load is not an empty catalogue. Kept apart so the page can say which
   // happened instead of blaming the user's filters for the server being unreachable.
   const [loadError, setLoadError] = useState(null);
@@ -87,13 +88,21 @@ export default function Shop() {
         console.error("Failed to load products:", err);
         if (!cancelled) setLoadError(err);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setInitialFetchDone(true);
+          setLoading(false);
+        }
       }
     })();
     return () => { cancelled = true; };
   }, [reloadKey]);
 
   useEffect(() => {
+    // Don't filter while the initial API fetch is still in progress — there's
+    // nothing to filter yet, and touching `loading` here would prematurely show
+    // "No products found" before Supabase has responded.
+    if (!initialFetchDone) return;
+
     setLoading(true);
     let filtered = [...products];
 
@@ -143,7 +152,7 @@ export default function Shop() {
       setLoading(false);
     }, 200);
     return () => clearTimeout(timer);
-  }, [searchQuery, selectedCategories, selectedBrands, selectedStyles, selectedFaceShapes, selectedPriceRanges, selectedBadges, products]);
+  }, [initialFetchDone, searchQuery, selectedCategories, selectedBrands, selectedStyles, selectedFaceShapes, selectedPriceRanges, selectedBadges, products]);
 
   const handleSearch = (query) => setSearchQuery(query);
 
