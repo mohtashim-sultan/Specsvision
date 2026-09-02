@@ -48,7 +48,7 @@ export default function AdminDashboardPage() {
     {
       label: "Total Revenue",
       value: stats?.total_sales
-        ? `PKR ${Number(stats.total_sales).toLocaleString()}`
+        ? `Rs. ${Number(stats.total_sales).toLocaleString()}`
         : "—",
       icon: TrendingUp,
       iconBg: "from-amber-500 to-orange-500",
@@ -186,8 +186,8 @@ export default function AdminDashboardPage() {
             </div>
             <p className="text-2xl sm:text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>
               {stats?.total_sales
-                ? `PKR ${Number(stats.total_sales).toLocaleString()}`
-                : "PKR 0"}
+                ? `Rs. ${Number(stats.total_sales).toLocaleString()}`
+                : "Rs. 0"}
             </p>
           </div>
           <div

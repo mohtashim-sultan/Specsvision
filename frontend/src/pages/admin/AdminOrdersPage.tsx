@@ -17,7 +17,7 @@ const statusColors: Record<string, { bg: string; text: string }> = {
 function formatPrice(p: string) {
   const n = Number(p);
   if (Number.isNaN(n)) return p;
-  return `PKR ${n.toLocaleString()}`;
+  return `Rs. ${n.toLocaleString()}`;
 }
 
 function formatDate(iso: string) {

@@ -86,7 +86,7 @@ export default function AdminUsersPage() {
                     </td>
                     <td className="px-4 py-3 hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{fmtDate(u.created_at)}</td>
                     <td className="px-4 py-3 text-right font-semibold" style={{ color: "var(--text-primary)" }}>{u.order_count}</td>
-                    <td className="px-4 py-3 text-right font-semibold" style={{ color: "var(--text-accent)" }}>PKR {Number(u.total_spent).toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right font-semibold" style={{ color: "var(--text-accent)" }}>Rs. {Number(u.total_spent).toLocaleString()}</td>
                     <td className="px-4 py-3 text-right hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{u.review_count}</td>
                   </tr>
                 ))

@@ -58,7 +58,7 @@ function statusLabel(s: TryOnStatus): string {
 function formatPrice(p: string) {
   const n = Number(p);
   if (Number.isNaN(n)) return p;
-  return `PKR ${n.toLocaleString()}`;
+  return `Rs. ${n.toLocaleString()}`;
 }
 
 export default function VirtualTryOnPage() {

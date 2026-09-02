@@ -208,10 +208,10 @@ export default function ProductCard({ product }) {
         </div>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-lg sm:text-xl font-bold" style={{ color: 'var(--text-accent)' }}>PKR {Number(product.price).toLocaleString()}</span>
+            <span className="text-lg sm:text-xl font-bold" style={{ color: 'var(--text-accent)' }}>${product.price}</span>
             {product.originalPrice && (
               <span className="text-xs sm:text-sm line-through" style={{ color: 'var(--text-muted)' }}>
-                PKR {Number(product.originalPrice).toLocaleString()}
+                ${product.originalPrice}
               </span>
             )}
           </div>
