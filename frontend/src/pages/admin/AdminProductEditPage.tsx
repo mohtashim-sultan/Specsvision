@@ -393,7 +393,7 @@ export default function AdminProductEditPage() {
             </select>
           </div>
           <div>
-            <label className="mb-xs block font-label text-label-md text-on-surface-variant">Price (USD)</label>
+            <label className="mb-xs block font-label text-label-md text-on-surface-variant">Price (PKR)</label>
             <input
               required
               type="number"

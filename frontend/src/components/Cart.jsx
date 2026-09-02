@@ -183,7 +183,7 @@ export default function Cart() {
                         {item.product.name}
                       </Link>
                       <p className="text-lg font-bold mt-1" style={{ color: 'var(--text-accent)' }}>
-                        PKR {Number(item.product.price).toLocaleString()}
+                        PKR {item.product.price.toFixed(2)}
                       </p>
                     </div>
                     <div className="flex items-center justify-between sm:justify-end gap-4">
@@ -213,8 +213,8 @@ export default function Cart() {
                           <Plus className="w-4 h-4" />
                         </button>
                       </div>
-                      <p className="text-base sm:text-lg font-bold min-w-20 text-right" style={{ color: 'var(--text-primary)' }}>
-                        PKR {(Number(item.product.price) * item.quantity).toLocaleString()}
+                      <p className="text-base sm:text-lg font-bold w-20 text-right" style={{ color: 'var(--text-primary)' }}>
+                        PKR {(item.product.price * item.quantity).toFixed(2)}
                       </p>
                       <button
                         type="button"
@@ -247,7 +247,7 @@ export default function Cart() {
               <div className="space-y-3 mb-4">
                 <div className="flex justify-between">
                   <span style={{ color: 'var(--text-secondary)' }}>Subtotal</span>
-                  <span className="font-medium" style={{ color: 'var(--text-primary)' }}>PKR {subtotal.toLocaleString()}</span>
+                  <span className="font-medium" style={{ color: 'var(--text-primary)' }}>PKR {subtotal.toFixed(2)}</span>
                 </div>
                 <p className="text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
                   Shipping & tax calculated at checkout
@@ -257,7 +257,7 @@ export default function Cart() {
                 <div className="flex justify-between items-center">
                   <span className="font-bold" style={{ color: 'var(--text-primary)' }}>Total</span>
                   <span className="text-xl font-bold" style={{ color: 'var(--text-accent)' }}>
-                    PKR {subtotal.toLocaleString()}
+                    PKR {subtotal.toFixed(2)}
                   </span>
                 </div>
               </div>
