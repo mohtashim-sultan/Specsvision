@@ -16,7 +16,7 @@ import ModelViewer from "../components/ModelViewer";
 function formatPrice(p: string) {
   const n = Number(p);
   if (Number.isNaN(n)) return p;
-  return `Rs. ${n.toLocaleString()}`;
+  return `PKR ${n.toLocaleString()}`;
 }
 
 export default function ProductDetailPage() {

@@ -55,7 +55,7 @@ export default function AdminAnalyticsPage() {
   const totalSentiment = Object.values(data.sentiment_breakdown).reduce((a, b) => a + b, 0);
 
   const stats = [
-    { label: "Total Revenue", value: `Rs. ${Number(data.revenue_total).toLocaleString()}`, Icon: DollarSign },
+    { label: "Total Revenue", value: `PKR ${Number(data.revenue_total).toLocaleString()}`, Icon: DollarSign },
     { label: "Total Orders", value: String(data.orders_total), Icon: ShoppingBag },
     { label: "Reviews", value: String(totalReviews), Icon: Star },
     { label: "Days with Sales", value: String(data.sales_by_day.length), Icon: TrendingUp },

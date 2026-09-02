@@ -183,7 +183,7 @@ export default function Cart() {
                         {item.product.name}
                       </Link>
                       <p className="text-lg font-bold mt-1" style={{ color: 'var(--text-accent)' }}>
-                        Rs. {Number(item.product.price).toLocaleString()}
+                        PKR {Number(item.product.price).toLocaleString()}
                       </p>
                     </div>
                     <div className="flex items-center justify-between sm:justify-end gap-4">
@@ -214,7 +214,7 @@ export default function Cart() {
                         </button>
                       </div>
                       <p className="text-base sm:text-lg font-bold min-w-20 text-right" style={{ color: 'var(--text-primary)' }}>
-                        Rs. {(Number(item.product.price) * item.quantity).toLocaleString()}
+                        PKR {(Number(item.product.price) * item.quantity).toLocaleString()}
                       </p>
                       <button
                         type="button"
@@ -247,7 +247,7 @@ export default function Cart() {
               <div className="space-y-3 mb-4">
                 <div className="flex justify-between">
                   <span style={{ color: 'var(--text-secondary)' }}>Subtotal</span>
-                  <span className="font-medium" style={{ color: 'var(--text-primary)' }}>Rs. {subtotal.toLocaleString()}</span>
+                  <span className="font-medium" style={{ color: 'var(--text-primary)' }}>PKR {subtotal.toLocaleString()}</span>
                 </div>
                 <p className="text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
                   Shipping & tax calculated at checkout
@@ -257,7 +257,7 @@ export default function Cart() {
                 <div className="flex justify-between items-center">
                   <span className="font-bold" style={{ color: 'var(--text-primary)' }}>Total</span>
                   <span className="text-xl font-bold" style={{ color: 'var(--text-accent)' }}>
-                    Rs. {subtotal.toLocaleString()}
+                    PKR {subtotal.toLocaleString()}
                   </span>
                 </div>
               </div>
