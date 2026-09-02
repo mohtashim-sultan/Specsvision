@@ -66,7 +66,7 @@ export default function About() {
               <div className="mt-5 grid sm:grid-cols-2 gap-3">
                 <div className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(147,51,234,0.06)', border: '1px solid var(--border-color)' }}>
                   <p className="text-xs uppercase tracking-wide font-semibold" style={{ color: 'var(--text-accent)' }}>Founded</p>
-                  <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>2018 · San Francisco, CA</p>
+                  <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>2018 · Pakistan , Lahore</p>
                 </div>
                 <div className="rounded-xl px-4 py-3" style={{ backgroundColor: 'rgba(236,72,153,0.06)', border: '1px solid var(--border-color)' }}>
                   <p className="text-xs uppercase tracking-wide font-semibold" style={{ color: 'var(--text-accent)' }}>Fit-Driven Vision</p>
@@ -238,9 +238,9 @@ export default function About() {
               <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Store &amp; Support</h3>
               <div className="space-y-2 text-xs sm:text-sm" style={{ color: 'var(--text-secondary)' }}>
                 {[
-                  { icon: MapPin, text: '1234 Market St, San Francisco, CA 94103' },
-                  { icon: Phone, text: '(415) 555-0182' },
-                  { icon: Mail, text: 'help@specsvision.com' },
+                  { icon: MapPin, text: 'Amanah Mall , Lahore, Pakistan' },
+                  { icon: Phone, text: '(+923)12 2255436' },
+                  { icon: Mail, text: 'specsvision1@gmail.com' },
                   { icon: Clock3, text: 'Mon-Fri 9am-6pm' },
                 ].map(({ icon: Icon, text }) => (
                   <p key={text} className="flex items-center gap-2">
@@ -263,7 +263,7 @@ export default function About() {
               <div className="mt-3 overflow-hidden rounded-xl" style={{ border: '1px solid var(--border-color)' }}>
                 <iframe
                   title="SpecsVision store map"
-                  src="https://maps.google.com/maps?q=1234%20Market%20St%20San%20Francisco&t=&z=13&ie=UTF8&iwloc=&output=embed"
+                  src="https://maps.google.com/maps?q=Amanah%20Mall%20,%20Lahore,%20Pakistan&t=&z=13&ie=UTF8&iwloc=&output=embed"
                   className="w-full h-52 border-0"
                   loading="lazy"
                   referrerPolicy="no-referrer-when-downgrade"

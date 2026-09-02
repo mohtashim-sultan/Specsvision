@@ -98,11 +98,9 @@ export default function Dropdown({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.98 }}
             transition={{ duration: 0.15, ease: 'easeOut' }}
-            className="absolute z-[100] top-full left-0 right-0 w-full min-w-[180px] mt-1.5 rounded-2xl shadow-2xl max-h-60 overflow-y-auto overscroll-contain custom-scrollbar border"
+            className="absolute z-[100] top-full left-0 right-0 w-full min-w-[180px] mt-1.5 rounded-2xl shadow-2xl max-h-60 overflow-y-auto overscroll-contain custom-scrollbar border bg-white dark:bg-slate-900 border-purple-100 dark:border-purple-500/25"
             style={{
-              backgroundColor: 'var(--surface-bg)',
-              borderColor: 'var(--border-color)',
-              boxShadow: '0 20px 35px -10px rgba(0,0,0,0.25), 0 0 15px rgba(147,51,234,0.08)',
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.35), 0 0 15px rgba(147,51,234,0.12)',
             }}
           >
             {options.length > 0 ? (

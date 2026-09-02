@@ -36,6 +36,12 @@
   --footer-bg: #111827;
   --footer-text: #ffffff;
   --footer-border: #1f2937;
+
+  /* Toast notification */
+  --toast-bg: rgba(255, 255, 255, 0.96);
+  --toast-color: #0f172a;
+  --toast-border: rgba(147, 51, 234, 0.22);
+  --toast-shadow: 0 16px 36px -6px rgba(147, 51, 234, 0.15), 0 0 0 1px rgba(147, 51, 234, 0.18);
 }
 
 .dark {
@@ -58,19 +64,25 @@
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
-  --text-accent: #a78bfa;
-  --text-accent-hover: #c4b5fd;
+  --text-accent: #c084fc;
+  --text-accent-hover: #a855f7;
   --text-on-accent: #ffffff;
-  --text-nav: #cbd5e1;
+  --text-nav: #e2e8f0;
 
   /* Border colors */
-  --border-color: rgba(51, 65, 85, 0.6);
-  --border-color-gray: rgba(255, 255, 255, 0.1);
+  --border-color: #1e293b;
+  --border-color-gray: #334155;
 
   /* Footer */
   --footer-bg: #020617;
-  --footer-text: #f8fafc;
+  --footer-text: #ffffff;
   --footer-border: #1e293b;
+
+  /* Toast notification */
+  --toast-bg: rgba(15, 23, 42, 0.94);
+  --toast-color: #ffffff;
+  --toast-border: rgba(168, 85, 247, 0.35);
+  --toast-shadow: 0 16px 36px -6px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(168, 85, 247, 0.3);
 }
 
 /* ── Missing dark-mode text overrides (Login / Signup / misc) ── */
@@ -339,246 +351,7 @@
 .tryon-studio .bg-slate-950 {
   background: transparent !important;
 }
-.tryon-studio {
-  color: #111827 !important;
-}
-.tryon-studio .bg-slate-950 { background: transparent !important; }
-.tryon-studio .bg-black { background: #e5e7eb !important; }
-.tryon-studio .bg-black\2f 50,
-.tryon-studio .bg-black\2f 60,
-.tryon-studio .bg-black\2f 70 { background: rgba(243, 232, 255, 0.8) !important; }
-.tryon-studio .bg-slate-900,
-.tryon-studio .bg-slate-900\2f 30,
-.tryon-studio .bg-slate-900\2f 40,
-.tryon-studio .bg-slate-900\2f 60,
-.tryon-studio .bg-slate-900\2f 95 { background: #ffffff !important; }
-.tryon-studio .bg-slate-950\2f 80 { background: rgba(255, 255, 255, 0.9) !important; }
-.tryon-studio .bg-slate-950\2f 95 { background: #ffffff !important; }
-.tryon-studio .bg-slate-800 { background: #f3e8ff !important; }
-.tryon-studio .bg-slate-800\2f 80 { background: #f3e8ff !important; }
-.tryon-studio .bg-slate-900\2f 60 { background: #faf5ff !important; }
-.tryon-studio .bg-slate-900\2f 30 { background: #ffffff !important; }
-.tryon-studio .bg-slate-900\2f animate-pulse { background: #f3e8ff !important; }
-.tryon-studio .bg-purple-500\2f 10 { background: rgba(147, 51, 234, 0.08) !important; }
-.tryon-studio .bg-purple-500\2f 15 { background: rgba(147, 51, 234, 0.12) !important; }
-.tryon-studio .bg-purple-500\2f 20 { background: rgba(147, 51, 234, 0.15) !important; }
-.tryon-studio .bg-purple-500\2f 25 { background: rgba(147, 51, 234, 0.2) !important; }
-.tryon-studio .bg-gradient-to-br.from-purple-900\2f 50.to-pink-900\2f 30 {
-  background: linear-gradient(135deg, rgba(147, 51, 234, 0.08), rgba(219, 39, 119, 0.05)) !important;
-}
-.tryon-studio .border-purple-500\2f 20 { border-color: rgba(147, 51, 234, 0.2) !important; }
-.tryon-studio .text-white { color: #111827 !important; }
-.tryon-studio .text-slate-200 { color: #1f2937 !important; }
-.tryon-studio .text-slate-300 { color: #374151 !important; }
-.tryon-studio .text-slate-400 { color: #6b7280 !important; }
-/* Slider "Reset" buttons — #9ca3af is too light on a white panel; use accent purple */
-.tryon-studio .text-slate-500 { color: #7c3aed !important; }
-.tryon-studio .text-slate-600 { color: #9ca3af !important; }
-.tryon-studio .text-purple-400 { color: #9333ea !important; }
-.tryon-studio .text-purple-300 { color: #7e22ce !important; }
-.tryon-studio .text-amber-400 { color: #d97706 !important; }
-.tryon-studio .text-amber-500 { color: #d97706 !important; }
-.tryon-studio .border-white\2f 10 { border-color: rgba(243, 232, 255, 0.6) !important; }
-.tryon-studio .border-slate-800\2f 60,
-.tryon-studio .border-slate-800 { border-color: rgba(243, 232, 255, 0.6) !important; }
-.tryon-studio .border-slate-700,
-.tryon-studio .border-slate-700\2f 60 { border-color: rgba(216, 180, 254, 0.4) !important; }
-.tryon-studio .border-slate-700\2f 50 { border-color: rgba(216, 180, 254, 0.3) !important; }
-.tryon-studio .ring-1.ring-purple-500\2f 20 { --tw-ring-color: rgba(147, 51, 234, 0.2) !important; }
-.tryon-studio .ring-purple-500\2f 20 { --tw-ring-color: rgba(147, 51, 234, 0.2) !important; }
-.tryon-studio .shadow-lg.shadow-purple-500\2f 20,
-.tryon-studio .shadow-lg.shadow-purple-500\2f 25,
-.tryon-studio .shadow-purple-500\2f 20,
-.tryon-studio .shadow-purple-500\2f 25,
-.tryon-studio .shadow-purple-500\2f 30,
-.tryon-studio .shadow-purple-500\2f 40 {
-  box-shadow: 0 10px 15px -3px rgba(147, 51, 234, 0.15), 0 4px 6px -4px rgba(147, 51, 234, 0.1) !important;
-}
-.tryon-studio .shadow-2xl { box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15) !important; }
-.tryon-studio .shadow-xl { box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05) !important; }
-.tryon-studio .hover\:bg-slate-900:hover { background: #f3e8ff !important; }
-.tryon-studio .hover\:bg-slate-800:hover { background: #ede9fe !important; }
-.tryon-studio .hover\:bg-slate-700:hover { background: #e9d5ff !important; }
-.tryon-studio .hover\:bg-purple-500\2f 20:hover { background: rgba(147, 51, 234, 0.15) !important; }
-.tryon-studio .hover\:bg-purple-500\2f 40:hover { background: rgba(147, 51, 234, 0.25) !important; }
-.tryon-studio .hover\:text-white:hover { color: #111827 !important; }
-.tryon-studio .hover\:text-purple-400:hover { color: #9333ea !important; }
-.tryon-studio .group:hover .group-hover\:text-slate-400 { color: #6b7280 !important; }
-.tryon-studio .bg-black\2f 70 { background: rgba(0, 0, 0, 0.3) !important; }
-.tryon-studio .bg-purple-500 { background: #9333ea !important; }
-.tryon-studio .bg-green-400 { background: #22c55e !important; }
-.tryon-studio .bg-red-400 { background: #ef4444 !important; }
-.tryon-studio .bg-amber-400 { background: #f59e0b !important; }
-.tryon-studio .bg-slate-800 { background: #f3e8ff !important; }
-.tryon-studio .accent-purple-500 { accent-color: #9333ea !important; }
-.tryon-studio .bg-purple-500\2f 10 { background: rgba(147, 51, 234, 0.08) !important; }
-.tryon-studio .text-purple-400 { color: #9333ea !important; }
-.tryon-studio .bg-gradient-to-r.from-purple-600.to-pink-500 {
-  background: linear-gradient(to right, #9333ea, #ec4899) !important;
-}
-.tryon-studio .bg-gradient-to-t.from-purple-600\2f 90.to-transparent {
-  background: linear-gradient(to top, rgba(147, 51, 234, 0.9), transparent) !important;
-}
 
-/* ── Light-mode: glass-chrome panel ──────────────────────────────────────────
-   The inline <style> in VirtualTryOnPage defines .glass-chrome with a hardcoded
-   dark gradient (specificity 0-1-0). .tryon-studio .glass-chrome has specificity
-   0-2-0 so it wins — converts the panel to a frosted light surface in light mode. */
-.tryon-studio .glass-chrome {
-  background: linear-gradient(135deg, rgba(250,245,255,0.94), rgba(253,242,248,0.90)) !important;
-  border-color: rgba(147, 51, 234, 0.15) !important;
-  box-shadow: 0 8px 32px -6px rgba(147, 51, 234, 0.10), inset 0 1px 0 rgba(255,255,255,0.85) !important;
-}
-
-/* Bottom control-bar grab-handle (Snapshot/Adjust pill) */
-.tryon-studio .grab-handle { background: rgba(147, 51, 234, 0.22) !important; }
-
-/* Icon button containers: bg-white/5 = rgba(255,255,255,0.05) → invisible on light bg */
-.tryon-studio .bg-white\2f 5  { background: rgba(147, 51, 234, 0.07) !important; }
-.tryon-studio .ring-white\2f 5 { --tw-ring-color: rgba(147, 51, 234, 0.12) !important; }
-.tryon-studio .hover\:bg-white\2f 10:hover { background: rgba(147, 51, 234, 0.13) !important; }
-
-/* Divider lines inside the bottom bar (bg-white/10) */
-.tryon-studio .bg-white\2f 10 { background: rgba(147, 51, 234, 0.18) !important; }
-
-/* "Reset All" border — border-slate-850 is not a valid Tailwind shade → generates no CSS.
-   Override explicitly so the button has a visible stroke in light mode. */
-.tryon-studio .border-slate-850 { border-color: rgba(147, 51, 234, 0.3) !important; }
-
-/* ── Light-mode: border-slate-900 turns near-black → swap to a soft purple border ── */
-.tryon-studio .border-slate-900,
-.tryon-studio .hover\:border-slate-850:hover { border-color: rgba(147, 51, 234, 0.18) !important; }
-
-/* ── Light-mode: bg-slate-900/* cards become dark blobs on a white sidebar ──
-   Map them to a very soft tinted surface so product cards are legible.     */
-.tryon-studio .bg-slate-900\2f 15  { background: rgba(147, 51, 234, 0.04) !important; }
-.tryon-studio .bg-slate-900\2f 40  { background: rgba(147, 51, 234, 0.08) !important; }
-.tryon-studio .bg-slate-900\2f 60  { background: rgba(147, 51, 234, 0.12) !important; }
-.tryon-studio .bg-slate-900\2f 40.animate-pulse { background: rgba(147, 51, 234, 0.08) !important; }
-
-/* Category filter buttons: inactive state uses dark bg+border which are invisible on white */
-.tryon-studio .bg-slate-900\2f 40.text-slate-400 {
-  background: rgba(147, 51, 234, 0.06) !important;
-  color: #6b7280 !important;
-}
-.tryon-studio .hover\:text-slate-200:hover { color: #1f2937 !important; }
-.tryon-studio .hover\:border-slate-800:hover { border-color: rgba(147, 51, 234, 0.3) !important; }
-
-/* ── Light-mode: "from-white" gradient text is invisible on light surfaces ──
-   Override Tailwind's gradient stop variable so the clip-text shows as a
-   readable purple-to-slate gradient instead of white-to-gray.             */
-.tryon-studio .from-white {
-  --tw-gradient-from: #6d28d9 !important;
-  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(109, 40, 217, 0)) !important;
-}
-.tryon-studio .via-purple-100 {
-  --tw-gradient-stops: var(--tw-gradient-from), #9333ea, var(--tw-gradient-to, rgba(147, 51, 234, 0)) !important;
-}
-.tryon-studio .to-slate-300,
-.tryon-studio .to-slate-400 {
-  --tw-gradient-to: #475569 !important;
-}
-
-/* Also fix the mobile category select whose text is light-colored */
-.tryon-studio .tryon-chrome-select { color: #374151 !important; border-color: rgba(147, 51, 234, 0.25) !important; background: rgba(147, 51, 234, 0.06) !important; }
-
-
-/* Dark mode: restore hardcoded dark colors (beats light-mode tryon-studio rules via higher specificity) */
-.dark .tryon-studio {
-  color: #ffffff !important;
-}
-.dark .tryon-studio .bg-slate-950,
-.dark .tryon-studio .bg-slate-950\2f 80,
-.dark .tryon-studio .bg-slate-950\2f 95 { background: #020617 !important; }
-.dark .tryon-studio .bg-slate-900,
-.dark .tryon-studio .bg-slate-900\2f 30,
-.dark .tryon-studio .bg-slate-900\2f 40,
-.dark .tryon-studio .bg-slate-900\2f 60,
-.dark .tryon-studio .bg-slate-900\2f 95 { background: #0f172a !important; }
-.dark .tryon-studio .bg-slate-800,
-.dark .tryon-studio .bg-slate-800\2f 80 { background: #1e293b !important; }
-.dark .tryon-studio .bg-black { background: #000000 !important; }
-.dark .tryon-studio .bg-black\2f 50,
-.dark .tryon-studio .bg-black\2f 60,
-.dark .tryon-studio .bg-black\2f 70 { background: rgba(0, 0, 0, 0.5) !important; }
-.dark .tryon-studio .bg-black\2f 70 { background: rgba(0, 0, 0, 0.7) !important; }
-.dark .tryon-studio .bg-purple-500\2f 10,
-.dark .tryon-studio .bg-purple-500\2f 15,
-.dark .tryon-studio .bg-purple-500\2f 20,
-.dark .tryon-studio .bg-purple-500\2f 25 { background: rgba(168, 85, 247, 0.15) !important; }
-.dark .tryon-studio .border-purple-500\2f 20 { border-color: rgba(168, 85, 247, 0.3) !important; }
-.dark .tryon-studio .text-white { color: #ffffff !important; }
-.dark .tryon-studio .text-slate-200 { color: #e2e8f0 !important; }
-.dark .tryon-studio .text-slate-300 { color: #cbd5e1 !important; }
-.dark .tryon-studio .text-slate-400 { color: #94a3b8 !important; }
-.dark .tryon-studio .text-slate-500 { color: #64748b !important; }
-.dark .tryon-studio .text-purple-400 { color: #a78bfa !important; }
-.dark .tryon-studio .text-purple-300 { color: #c4b5fd !important; }
-.dark .tryon-studio .text-amber-400,
-.dark .tryon-studio .text-amber-500 { color: #fbbf24 !important; }
-.dark .tryon-studio .border-white\2f 10 { border-color: rgba(255, 255, 255, 0.1) !important; }
-.dark .tryon-studio .border-slate-800\2f 60,
-.dark .tryon-studio .border-slate-800 { border-color: rgba(51, 65, 85, 0.6) !important; }
-.dark .tryon-studio .border-slate-700,
-.dark .tryon-studio .border-slate-700\2f 60 { border-color: rgba(51, 65, 85, 0.6) !important; }
-.dark .tryon-studio .border-slate-700\2f 50 { border-color: rgba(51, 65, 85, 0.5) !important; }
-.dark .tryon-studio .shadow-2xl { box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important; }
-.dark .tryon-studio .shadow-xl { box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.2) !important; }
-.dark .tryon-studio .accent-purple-500 { accent-color: #a78bfa !important; }
-.dark .tryon-studio .bg-gradient-to-r.from-purple-600.to-pink-500 {
-  background: linear-gradient(to right, #9333ea, #ec4899) !important;
-}
-.dark .tryon-studio .bg-gradient-to-t.from-purple-600\2f 90.to-transparent {
-  background: linear-gradient(to top, rgba(147, 51, 234, 0.9), transparent) !important;
-}
-
-/* Dark mode restores for light-mode border / bg / gradient fixes */
-.dark .tryon-studio .border-slate-900 { border-color: #0f172a !important; }
-.dark .tryon-studio .bg-slate-900\2f 15 { background: rgba(15, 23, 42, 0.15) !important; }
-.dark .tryon-studio .bg-slate-900\2f 40 { background: rgba(15, 23, 42, 0.4) !important; }
-.dark .tryon-studio .bg-slate-900\2f 60 { background: rgba(15, 23, 42, 0.6) !important; }
-
-/* Restore gradient stop variables in dark mode so headings render white-to-slate */
-.dark .tryon-studio .from-white {
-  --tw-gradient-from: #ffffff !important;
-  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(255, 255, 255, 0)) !important;
-}
-.dark .tryon-studio .via-purple-100 {
-  --tw-gradient-stops: var(--tw-gradient-from), #f3e8ff, var(--tw-gradient-to, rgba(243, 232, 255, 0)) !important;
-}
-.dark .tryon-studio .to-slate-300 { --tw-gradient-to: #cbd5e1 !important; }
-.dark .tryon-studio .to-slate-400 { --tw-gradient-to: #94a3b8 !important; }
-
-/* Category filter buttons restore */
-.dark .tryon-studio .hover\:text-slate-200:hover { color: #e2e8f0 !important; }
-.dark .tryon-studio .hover\:border-slate-800:hover { border-color: rgba(51, 65, 85, 0.6) !important; }
-
-/* Mobile category select restore */
-.dark .tryon-studio .tryon-chrome-select {
-  color: #e2e8f0 !important;
-  border-color: rgba(255, 255, 255, 0.1) !important;
-  background: rgba(255, 255, 255, 0.05) !important;
-}
-
-/* Restore glass-chrome dark gradient in dark mode */
-.dark .tryon-studio .glass-chrome {
-  background: linear-gradient(135deg, rgba(15,23,42,0.82), rgba(10,10,20,0.72)) !important;
-  border-color: rgba(255, 255, 255, 0.10) !important;
-  box-shadow: 0 8px 32px -6px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06) !important;
-}
-
-/* Restore grab-handle, icon containers, and divider lines in dark mode */
-.dark .tryon-studio .grab-handle { background: rgba(255, 255, 255, 0.22) !important; }
-.dark .tryon-studio .bg-white\2f 5  { background: rgba(255, 255, 255, 0.05) !important; }
-.dark .tryon-studio .ring-white\2f 5 { --tw-ring-color: rgba(255, 255, 255, 0.05) !important; }
-.dark .tryon-studio .hover\:bg-white\2f 10:hover { background: rgba(255, 255, 255, 0.10) !important; }
-.dark .tryon-studio .bg-white\2f 10 { background: rgba(255, 255, 255, 0.10) !important; }
-
-/* Restore slider Reset button color in dark mode */
-.dark .tryon-studio .text-slate-500 { color: #64748b !important; }
-
-/* Restore Reset All button border in dark mode */
-.dark .tryon-studio .border-slate-850 { border-color: rgba(255, 255, 255, 0.08) !important; }
 
 /* ===== Quick Presets & Try-On Actions High-Contrast Theming ===== */
 

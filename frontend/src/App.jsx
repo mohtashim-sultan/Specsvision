@@ -1,7 +1,7 @@
 import React from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import ScrollToTop from './components/common/ScrollToTop';
-import { Toaster } from 'react-hot-toast';
+import toast, { Toaster, ToastBar } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { WishlistProvider } from './context/WishlistContext';
@@ -81,12 +81,18 @@ function AppContent() {
       <Toaster
         position="top-right"
         toastOptions={{
-          duration: 3000,
+          duration: 3500,
           style: {
-            background: '#fff',
-            color: '#333',
-            border: '1px solid #e5e7eb',
-            borderRadius: '12px',
+            background: 'var(--toast-bg, rgba(255, 255, 255, 0.96))',
+            color: 'var(--toast-color, #0f172a)',
+            border: '1px solid var(--toast-border, rgba(147, 51, 234, 0.22))',
+            boxShadow: 'var(--toast-shadow, 0 16px 36px -6px rgba(147, 51, 234, 0.15))',
+            borderRadius: '20px',
+            padding: '8px 14px',
+            fontSize: '13px',
+            fontWeight: 600,
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
           },
           success: {
             iconTheme: {
@@ -101,8 +107,38 @@ function AppContent() {
             },
           },
         }}
-        containerStyle={{ color: 'var(--text-primary)' }}
-      />
+      >
+        {(t) => (
+          <ToastBar toast={t}>
+            {({ icon, message }) => (
+              <div className="flex items-center gap-2.5">
+                <div className="shrink-0 flex items-center justify-center">
+                  {icon}
+                </div>
+                <div className="flex-1 text-[12.5px] sm:text-[13px] font-semibold leading-tight pr-1">
+                  {message}
+                </div>
+                {t.type !== 'loading' && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toast.dismiss(t.id);
+                    }}
+                    className="shrink-0 ml-1.5 p-1 rounded-full text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-purple-100/50 dark:hover:bg-white/10 active:scale-90 transition-all cursor-pointer flex items-center justify-center"
+                    aria-label="Dismiss notification"
+                  >
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18"></line>
+                      <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                  </button>
+                )}
+              </div>
+            )}
+          </ToastBar>
+        )}
+      </Toaster>
     </div>
   );
 }

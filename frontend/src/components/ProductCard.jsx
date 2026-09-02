@@ -1,12 +1,11 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Star, Eye, ShoppingCart, Heart, GitCompare, Box } from 'lucide-react';
+import { Star, Eye, ShoppingCart, Heart, GitCompare } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useWishlist } from '../context/WishlistContext';
 import { useCompare } from '../context/CompareContext';
 import { addCartItem } from '../api/cartApi';
-import { API_BASE } from '../config/env';
 import toast from 'react-hot-toast';
 
 export default function ProductCard({ product }) {
@@ -17,12 +16,6 @@ export default function ProductCard({ product }) {
   const { isWishlisted, toggle: toggleWishlist } = useWishlist();
   const { has: inCompare, toggle: toggleCompare } = useCompare();
   const wishlisted = isWishlisted(product.id);
-
-  const modelSrc = useMemo(() => {
-    const fv = product?.front_view?.trim();
-    if (!fv || !/\.(glb|gltf)$/i.test(fv)) return null;
-    return fv.startsWith('/') ? `${API_BASE}${fv}` : fv;
-  }, [product]);
 
   const handlePointerDown = (e) => {
     pointerStartRef.current = { x: e.clientX, y: e.clientY };
@@ -94,30 +87,26 @@ export default function ProductCard({ product }) {
               decoding="async"
             />
           </div>
-          {/* Costs nothing to render and tells the shopper the model exists. */}
-          {modelSrc && (
-            <span className="pointer-events-none absolute bottom-2 right-2 z-10 flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur-sm">
-              <Box className="h-3 w-3" />
-              3D
+        </div>
+        {product.badge && (
+          <div className="absolute top-2 sm:top-3 left-2 sm:left-3 z-10 pointer-events-none">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[9px] sm:text-[10px] font-bold tracking-widest uppercase rounded-lg bg-white/95 text-slate-900 border border-slate-200/90 shadow-[0_2px_8px_rgba(0,0,0,0.06)] dark:bg-slate-950/90 dark:text-white dark:border-white/15 dark:shadow-[0_2px_8px_rgba(0,0,0,0.4)] backdrop-blur-md whitespace-nowrap transition-colors">
+              <span
+                className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                  product.badge === 'Best Seller'
+                    ? 'bg-amber-500 dark:bg-amber-400 shadow-[0_0_6px_rgba(245,158,11,0.5)]'
+                    : product.badge === 'New'
+                    ? 'bg-emerald-500 dark:bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.5)]'
+                    : product.badge === 'Trending'
+                    ? 'bg-purple-600 dark:bg-purple-400 shadow-[0_0_6px_rgba(147,51,234,0.5)]'
+                    : 'bg-rose-500 dark:bg-rose-400 shadow-[0_0_6px_rgba(244,63,94,0.5)]'
+                }`}
+              />
+              {product.badge}
             </span>
-          )}
-        </div>
-        <div className="absolute top-2 sm:top-3 left-2 sm:left-3 z-10">
-          <span
-            className={`px-2 py-1 text-[10px] xs:text-xs font-semibold rounded-full whitespace-nowrap ${
-              product.badge === 'Best Seller'
-                ? 'bg-orange-100 text-orange-800'
-                : product.badge === 'New'
-                ? 'bg-green-100 text-green-800'
-                : product.badge === 'Trending'
-                ? 'bg-purple-100 text-purple-800'
-                : 'bg-red-100 text-red-800'
-            }`}
-          >
-            {product.badge}
-          </span>
-        </div>
-        <div className="absolute top-2 sm:top-3 right-2 sm:right-3 z-30 flex flex-col gap-2 pointer-events-auto">
+          </div>
+        )}
+        <div className="absolute top-2 sm:top-3 right-2 sm:right-3 z-10 flex flex-col gap-2 pointer-events-auto">
           <button
             type="button"
             onClick={handleWishlist}

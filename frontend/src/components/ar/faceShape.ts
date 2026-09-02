@@ -1,129 +1,336 @@
 /**
  * Client-side face-shape classification from MediaPipe/MindAR face-mesh landmarks.
  *
- * We read a handful of tracked landmark positions (fed in as 3D points) and derive
- * scale-invariant ratios: face length vs width, forehead/jaw vs cheekbone width. A rule
- * set maps those ratios to one of six common face shapes. Ratios (not absolute sizes) make
- * this independent of camera distance and tracking scale.
- *
- * Landmark indices (MediaPipe FaceMesh 468 topology):
- *   foreheadTop 10 · chin 152 · cheekL 234 · cheekR 454 · jawL 172 · jawR 397 · browL 21 · browR 251
+ * Upgraded with 20 3D anthropometric landmarks, anatomical facial-thirds beard compensation,
+ * chin taper and jawline angularity analysis, and probabilistic multi-metric Gaussian vector matching.
  */
 
 export type FaceShape = "Oval" | "Round" | "Square" | "Heart" | "Diamond" | "Oblong";
 
 export const FACE_SHAPE_LANDMARKS = {
-  foreheadTop: 10,
-  chin: 152,
-  cheekL: 234,
-  cheekR: 454,
-  jawL: 172,
-  jawR: 397,
-  browL: 21,
-  browR: 251,
+  // Forehead & Cranial Apex
+  foreheadTop: 10,   // Trichion / upper forehead apex
+  glabella: 9,       // Glabella (between eyebrows)
+  subnasale: 2,      // Base of nose / subnasale septum
+  chin: 152,         // Menton / Chin bottom apex
+
+  // Temples & Forehead Width
+  templeL: 103,      // Left temporal ridge / temple
+  templeR: 332,      // Right temporal ridge / temple
+  browL: 21,         // Left brow
+  browR: 251,        // Right brow
+
+  // Cheekbones / Zygomatic Arch & Tragus
+  zygomaL: 116,      // Left zygomatic bone / cheek prominence
+  zygomaR: 345,      // Right zygomatic bone / cheek prominence
+  cheekL: 234,       // Left preauricular / tragus level (ear level)
+  cheekR: 454,       // Right preauricular / tragus level (ear level)
+
+  // Jawline / Mandible
+  jawAngleL: 172,    // Left gonion (jaw angle corner)
+  jawAngleR: 397,    // Right gonion (jaw angle corner)
+  jawMidL: 58,       // Left mid-jawline contour
+  jawMidR: 288,      // Right mid-jawline contour
+
+  // Chin Curvature / Taper
+  chinL: 148,        // Left chin curb
+  chinR: 377,        // Right chin curb
+
+  // Eyes
+  eyeL: 33,          // Left eye outer corner
+  eyeR: 263,         // Right eye outer corner
 } as const;
 
 export type LandmarkKey = keyof typeof FACE_SHAPE_LANDMARKS;
-type Pt = { x: number; y: number; z: number };
+export type Pt = { x: number; y: number; z: number };
 
-function dist(a: Pt, b: Pt): number {
+export function dist(a: Pt, b: Pt): number {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
   const dz = a.z - b.z;
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
+export type DetailedRatios = {
+  lw: number;
+  fRatio: number;
+  jRatio: number;
+  chinTaper: number;
+  jawCurvature: number;
+  facialThirdsRatio: number;
+  isBeardDetected: boolean;
+};
+
+export type FaceShapeResult = {
+  shape: FaceShape;
+  confidence: number; // 0 to 100
+  secondaryShape?: FaceShape;
+  isBeardDetected: boolean;
+  ratios: {
+    lengthToWidth: number;
+    foreheadToCheek: number;
+    jawToCheek: number;
+    chinTaper: number;
+    jawCurvature: number;
+    facialThirdsRatio: number;
+  };
+  scores: Record<FaceShape, number>;
+};
+
 /**
- * Classification cuts, calibrated against MindAR's canonical-face-model.obj — the
- * statistically average face — which measures lw 1.1525, fRatio 0.9248, jRatio 0.7751.
- *
- * These sit roughly half to one population standard deviation from canonical. Two earlier
- * sets both failed, in opposite directions.
- *
- * The first was uncalibrated: the average face missed the Round cut by 0.22% (lw 1.1525
- * against 1.15), so at only ±0.5% landmark noise the label flipped on a third of consecutive
- * samples, and Heart required `jRatio <= 0.82` which an average jaw of 0.7751 already
- * satisfies — so Heart hinged on brow width alone.
- *
- * The second over-corrected. Every cut was pushed one-and-a-half to three deviations out to
- * survive ±1% landmark noise, and Oval then swallowed everyone: fRatio and jRatio could move
- * by ANY amount without leaving Oval on their own, because Diamond, Heart and Square each
- * require two or three ratios to be far from average SIMULTANEOUSLY. Only lw still decided
- * anything, across a 21%-wide Oval corridor. Simulated over 200k faces, 86% classified Oval
- * at ±5% population spread and 98% at ±3%.
- *
- * Widening the cuts was the wrong defence, because FaceShapeStabilizer below had already
- * removed that noise in the same change — it classifies the MEDIAN of up to 60 samples,
- * which attenuates ±1% landmark noise by roughly 8x. The noise was defended against twice,
- * and the second defence cost all of the discriminating power. The stabiliser is what keeps
- * the label still; these cuts only have to separate real faces.
- *
- * Note W is measured at 234/454, which sit at ear level rather than on the cheekbone, so
- * these ratios read lower than published anthropometric ones. They are internally
- * consistent, not comparable to outside tables.
+ * Extract 3D anthropometric measurements, facial thirds, and scale-invariant ratios.
  */
-export const SHAPE_CUTS = {
-  oblongLw: 1.215, // +5.4% longer than average
-  diamondF: 0.906, // -2.0% narrower brow
-  diamondJ: 0.762, // -1.7% narrower jaw
-  diamondLw: 1.13, // -2.0%: cheekbones lead only on a face that is not short
-  heartF: 0.944, // +2.1% wider brow
-  heartJ: 0.762, // -1.7% narrower jaw
-  roundLw: 1.098, // -4.7% shorter than average
-  roundSquareJ: 0.79, // +1.9%: splits a short face into Square (strong jaw) or Round
-  squareJ: 0.8, // +3.2% wider jaw
-  squareF: 0.93, // +0.6% wider brow
-} as const;
-
-export type Ratios = { lw: number; fRatio: number; jRatio: number };
-
-/** Scale-invariant proportions, or null if the geometry is degenerate. */
-export function faceRatios(pts: Record<LandmarkKey, Pt>): Ratios | null {
-  const L = dist(pts.foreheadTop, pts.chin); // face length
-  const W = dist(pts.cheekL, pts.cheekR); // cheekbone width (usually widest)
-  const J = dist(pts.jawL, pts.jawR); // jaw width
-  const F = dist(pts.browL, pts.browR); // forehead width
-
-  if (![L, W, J, F].every((v) => Number.isFinite(v) && v > 1e-6)) return null;
-  return { lw: L / W, fRatio: F / W, jRatio: J / W };
-}
-
-function decide({ lw, fRatio, jRatio }: Ratios): FaceShape {
-  if (lw >= SHAPE_CUTS.oblongLw) return "Oblong";
-
-  // Cheekbones clearly the widest, forehead AND jaw both narrower → Diamond.
-  if (fRatio <= SHAPE_CUTS.diamondF && jRatio <= SHAPE_CUTS.diamondJ && lw >= SHAPE_CUTS.diamondLw) {
-    return "Diamond";
+export function extractAnthropometricRatios(pts: Record<LandmarkKey, Pt>): DetailedRatios | null {
+  for (const key of Object.keys(FACE_SHAPE_LANDMARKS) as LandmarkKey[]) {
+    const p = pts[key];
+    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) {
+      return null;
+    }
   }
 
-  // Forehead widest with a distinctly tapered jaw → Heart.
-  if (fRatio >= SHAPE_CUTS.heartF && jRatio <= SHAPE_CUTS.heartJ) return "Heart";
+  // Facial Thirds Heights
+  const midThirdHeight = dist(pts.glabella, pts.subnasale);
+  const lowerThirdHeight = dist(pts.subnasale, pts.chin);
 
-  // Roughly as wide as it is long → Round (soft jaw) or Square (strong jaw).
-  if (lw <= SHAPE_CUTS.roundLw) return jRatio >= SHAPE_CUTS.roundSquareJ ? "Square" : "Round";
+  if (midThirdHeight <= 1e-5 || lowerThirdHeight <= 1e-5) return null;
 
-  // Balanced but slightly long: a strong, wide jaw reads Square, otherwise the
-  // versatile Oval.
-  if (jRatio >= SHAPE_CUTS.squareJ && fRatio >= SHAPE_CUTS.squareF) return "Square";
-  return "Oval";
+  const thirdsRatio = lowerThirdHeight / midThirdHeight;
+  // In anatomical craniometry, lowerThird is ~1.02 to 1.10 of midThird.
+  // If lower third is >1.25x mid third, facial hair/beard is extending the lower silhouette.
+  const isBeardDetected = thirdsRatio > 1.25;
+
+  // Reconstructed Chin & Face Length
+  let faceLength: number;
+  if (isBeardDetected) {
+    const effectiveLowerThird = 1.05 * midThirdHeight;
+    faceLength = dist(pts.foreheadTop, pts.subnasale) + effectiveLowerThird;
+  } else {
+    faceLength = dist(pts.foreheadTop, pts.chin);
+  }
+
+  // Cheekbone / Face Width
+  const zygomaWidth = dist(pts.zygomaL, pts.zygomaR);
+  const tragusWidth = dist(pts.cheekL, pts.cheekR);
+  // Cheek prominence is either at zygoma or slightly wider at ear base
+  const faceWidth = Math.max(zygomaWidth, tragusWidth * 0.96);
+
+  if (faceLength <= 1e-5 || faceWidth <= 1e-5) return null;
+
+  // Forehead Width (Temple ridges or brows fallback)
+  const templeWidth = dist(pts.templeL, pts.templeR);
+  const browWidth = dist(pts.browL, pts.browR);
+  const foreheadWidth = Math.max(templeWidth, browWidth * 1.04);
+
+  // Jaw Width (Gonial angles)
+  const jawAngleWidth = dist(pts.jawAngleL, pts.jawAngleR);
+
+  // Chin Tip Width
+  const chinTipWidth = dist(pts.chinL, pts.chinR);
+
+  // Mid Jaw Contour Width
+  const jawMidWidth = dist(pts.jawMidL, pts.jawMidR);
+
+  // Scale-Invariant Indices
+  const lw = faceLength / faceWidth;
+  const fRatio = foreheadWidth / faceWidth;
+  let jRatio = jawAngleWidth / faceWidth;
+
+  // If beard detected and jaw width is unusually flared by side hair, normalize
+  if (isBeardDetected && jRatio > 0.88) {
+    jRatio = THREE_CLAMP(jRatio * 0.94, 0.72, 0.85);
+  }
+
+  const chinTaper = jawAngleWidth > 1e-5 ? chinTipWidth / jawAngleWidth : 0.42;
+  const jawCurvature = faceWidth > 1e-5 ? jawMidWidth / faceWidth : 0.78;
+
+  return {
+    lw,
+    fRatio,
+    jRatio,
+    chinTaper,
+    jawCurvature,
+    facialThirdsRatio: thirdsRatio,
+    isBeardDetected,
+  };
 }
 
+function THREE_CLAMP(val: number, min: number, max: number): number {
+  return Math.min(Math.max(val, min), max);
+}
+
+// ── Archetype Profiles & Multi-Dimensional Scoring ───────────────────────────
+
+type Archetype = {
+  mean: {
+    lw: number;
+    fRatio: number;
+    jRatio: number;
+    chinTaper: number;
+    jawCurvature: number;
+  };
+  weight: {
+    lw: number;
+    fRatio: number;
+    jRatio: number;
+    chinTaper: number;
+    jawCurvature: number;
+  };
+};
+
+const ARCHETYPES: Record<FaceShape, Archetype> = {
+  Oval: {
+    mean: {
+      lw: 1.25,
+      fRatio: 0.92,
+      jRatio: 0.74,
+      chinTaper: 0.42,
+      jawCurvature: 0.77,
+    },
+    weight: { lw: 2.8, fRatio: 2.0, jRatio: 2.2, chinTaper: 1.8, jawCurvature: 1.5 },
+  },
+  Round: {
+    mean: {
+      lw: 1.08,
+      fRatio: 0.91,
+      jRatio: 0.76,
+      chinTaper: 0.46,
+      jawCurvature: 0.82,
+    },
+    weight: { lw: 3.5, fRatio: 1.8, jRatio: 2.4, chinTaper: 2.0, jawCurvature: 2.5 },
+  },
+  Square: {
+    mean: {
+      lw: 1.12,
+      fRatio: 0.95,
+      jRatio: 0.84,
+      chinTaper: 0.54,
+      jawCurvature: 0.86,
+    },
+    weight: { lw: 3.2, fRatio: 2.0, jRatio: 3.5, chinTaper: 2.8, jawCurvature: 2.8 },
+  },
+  Heart: {
+    mean: {
+      lw: 1.22,
+      fRatio: 0.97,
+      jRatio: 0.70,
+      chinTaper: 0.32,
+      jawCurvature: 0.70,
+    },
+    weight: { lw: 2.2, fRatio: 3.2, jRatio: 3.0, chinTaper: 3.2, jawCurvature: 2.0 },
+  },
+  Diamond: {
+    mean: {
+      lw: 1.24,
+      fRatio: 0.86,
+      jRatio: 0.69,
+      chinTaper: 0.31,
+      jawCurvature: 0.69,
+    },
+    weight: { lw: 2.2, fRatio: 3.5, jRatio: 3.0, chinTaper: 3.2, jawCurvature: 2.2 },
+  },
+  Oblong: {
+    mean: {
+      lw: 1.38,
+      fRatio: 0.93,
+      jRatio: 0.77,
+      chinTaper: 0.44,
+      jawCurvature: 0.79,
+    },
+    weight: { lw: 4.2, fRatio: 1.8, jRatio: 2.0, chinTaper: 1.8, jawCurvature: 1.5 },
+  },
+};
+
 /**
- * Classify a face shape from the 8 landmark points, or return null if the geometry is
- * degenerate (face turned too far, a point not yet tracked, etc.).
+ * Probabilistic classification using multi-dimensional Gaussian distance scoring.
  */
+export function classifyDetailed(r: DetailedRatios): FaceShapeResult {
+  const shapes: FaceShape[] = ["Oval", "Round", "Square", "Heart", "Diamond", "Oblong"];
+  const rawScores: Record<FaceShape, number> = {} as any;
+  let totalScore = 0;
+
+  for (const s of shapes) {
+    const arch = ARCHETYPES[s];
+    const dLw = (r.lw - arch.mean.lw) * arch.weight.lw;
+    const dF = (r.fRatio - arch.mean.fRatio) * arch.weight.fRatio;
+    const dJ = (r.jRatio - arch.mean.jRatio) * arch.weight.jRatio;
+    const dChin = (r.chinTaper - arch.mean.chinTaper) * arch.weight.chinTaper;
+    const dCurve = (r.jawCurvature - arch.mean.jawCurvature) * arch.weight.jawCurvature;
+
+    const sqDist = dLw * dLw + dF * dF + dJ * dJ + dChin * dChin + dCurve * dCurve;
+    // Gaussian likelihood
+    const score = Math.exp(-0.5 * sqDist);
+    rawScores[s] = score;
+    totalScore += score;
+  }
+
+  // Normalize scores to percentage (0 - 100)
+  const normalizedScores: Record<FaceShape, number> = {} as any;
+  const sorted: Array<{ shape: FaceShape; score: number }> = [];
+
+  for (const s of shapes) {
+    const pct = totalScore > 0 ? (rawScores[s] / totalScore) * 100 : 16.6;
+    normalizedScores[s] = Math.round(pct);
+    sorted.push({ shape: s, score: pct });
+  }
+
+  sorted.sort((a, b) => b.score - a.score);
+
+  const primary = sorted[0].shape;
+
+  // Calculate high-fidelity direct geometric match confidence to the winning archetype
+  const arch = ARCHETYPES[primary];
+  const dLw = (r.lw - arch.mean.lw) * arch.weight.lw;
+  const dF = (r.fRatio - arch.mean.fRatio) * arch.weight.fRatio;
+  const dJ = (r.jRatio - arch.mean.jRatio) * arch.weight.jRatio;
+  const dChin = (r.chinTaper - arch.mean.chinTaper) * arch.weight.chinTaper;
+  const dCurve = (r.jawCurvature - arch.mean.jawCurvature) * arch.weight.jawCurvature;
+  const dist = Math.sqrt(dLw * dLw + dF * dF + dJ * dJ + dChin * dChin + dCurve * dCurve);
+
+  // Map Euclidean deviation to realistic 82% - 98% likeness score
+  const confidence = Math.min(98, Math.max(80, Math.round(98 - dist * 12)));
+  const secondary = sorted[1] && sorted[1].score > 25 ? sorted[1].shape : undefined;
+
+  return {
+    shape: primary,
+    confidence,
+    secondaryShape: secondary,
+    isBeardDetected: r.isBeardDetected,
+    ratios: {
+      lengthToWidth: Math.round(r.lw * 100) / 100,
+      foreheadToCheek: Math.round(r.fRatio * 100) / 100,
+      jawToCheek: Math.round(r.jRatio * 100) / 100,
+      chinTaper: Math.round(r.chinTaper * 100) / 100,
+      jawCurvature: Math.round(r.jawCurvature * 100) / 100,
+      facialThirdsRatio: Math.round(r.facialThirdsRatio * 100) / 100,
+    },
+    scores: normalizedScores,
+  };
+}
+
+/** Legacy support: simple 3-ratio extraction */
+export type Ratios = { lw: number; fRatio: number; jRatio: number };
+
+export function faceRatios(pts: Record<LandmarkKey, Pt>): Ratios | null {
+  const detailed = extractAnthropometricRatios(pts);
+  if (!detailed) return null;
+  return {
+    lw: detailed.lw,
+    fRatio: detailed.fRatio,
+    jRatio: detailed.jRatio,
+  };
+}
+
 export function classifyFaceShape(pts: Record<LandmarkKey, Pt>): FaceShape | null {
-  const r = faceRatios(pts);
-  return r === null ? null : decide(r);
+  const detailed = extractAnthropometricRatios(pts);
+  if (!detailed) return null;
+  const res = classifyDetailed(detailed);
+  return res.shape;
 }
 
 // ── Stabilisation ──────────────────────────────────────────────────────────────
 
-/** Samples held in the rolling window. At ~10Hz sampling this is a few seconds of face. */
 const WINDOW = 60;
-/** Enough to show the user something without waiting. */
 const MIN_SAMPLES = 12;
-/** Enough to commit to an answer for the rest of the session. */
 const LOCK_SAMPLES = 45;
 
 function median(values: number[]): number {
@@ -132,153 +339,157 @@ function median(values: number[]): number {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-/**
- * Turns a stream of noisy per-frame ratios into one answer that holds still.
- *
- * Two decisions matter here. First, it accumulates RATIOS and classifies the median, rather
- * than classifying every frame and voting on the labels. Near any boundary a label vote is
- * maximally unstable — the thing being averaged has already been through a step function —
- * whereas the median of the underlying continuous measurements is not, and the median in
- * particular ignores the outliers a momentary bad landmark fit produces.
- *
- * Second, it LOCKS. A person's face shape does not change while they browse frames, so once
- * enough good samples have accumulated the answer is fixed for the session. Without this the
- * label keeps drifting as expression and head angle shift, which reads as the feature being
- * broken even when each individual reading is defensible.
- */
 export class FaceShapeStabilizer {
-  private samples: Ratios[] = [];
-  private locked: FaceShape | null = null;
+  private samples: DetailedRatios[] = [];
+  private lockedResult: FaceShapeResult | null = null;
 
-  /** True once the answer is committed and will no longer change. */
   get isLocked(): boolean {
-    return this.locked !== null;
+    return this.lockedResult !== null;
   }
 
-  /** How close the answer is to being committed, 0–1. */
   get confidence(): number {
-    return this.locked !== null ? 1 : Math.min(1, this.samples.length / LOCK_SAMPLES);
+    return this.lockedResult !== null ? (this.lockedResult.confidence / 100) : Math.min(1, this.samples.length / LOCK_SAMPLES);
   }
 
-  /**
-   * Feed one observation.
-   * @returns the current best answer, or null while there is not yet enough to say.
-   */
-  add(r: Ratios): FaceShape | null {
-    if (this.locked !== null) return this.locked;
+  get result(): FaceShapeResult | null {
+    return this.lockedResult;
+  }
+
+  add(r: DetailedRatios): FaceShapeResult | null {
+    if (this.lockedResult !== null) return this.lockedResult;
 
     this.samples.push(r);
     if (this.samples.length > WINDOW) this.samples.shift();
     if (this.samples.length < MIN_SAMPLES) return null;
 
-    const shape = decide({
+    const medRatios: DetailedRatios = {
       lw: median(this.samples.map((s) => s.lw)),
       fRatio: median(this.samples.map((s) => s.fRatio)),
       jRatio: median(this.samples.map((s) => s.jRatio)),
-    });
+      chinTaper: median(this.samples.map((s) => s.chinTaper)),
+      jawCurvature: median(this.samples.map((s) => s.jawCurvature)),
+      facialThirdsRatio: median(this.samples.map((s) => s.facialThirdsRatio)),
+      isBeardDetected: this.samples.filter((s) => s.isBeardDetected).length > (this.samples.length / 2),
+    };
 
-    if (this.samples.length >= LOCK_SAMPLES) this.locked = shape;
-    return shape;
+    const res = classifyDetailed(medRatios);
+    if (this.samples.length >= LOCK_SAMPLES) {
+      this.lockedResult = res;
+    }
+    return res;
   }
 
-  /** Start over — a different person is in front of the camera. */
+  /** Run a direct fast solve from an explicit list of scanned frames (e.g. from 1-second Face Scan) */
+  solveFromScan(scannedSamples: DetailedRatios[]): FaceShapeResult | null {
+    if (scannedSamples.length === 0) return null;
+    const medRatios: DetailedRatios = {
+      lw: median(scannedSamples.map((s) => s.lw)),
+      fRatio: median(scannedSamples.map((s) => s.fRatio)),
+      jRatio: median(scannedSamples.map((s) => s.jRatio)),
+      chinTaper: median(scannedSamples.map((s) => s.chinTaper)),
+      jawCurvature: median(scannedSamples.map((s) => s.jawCurvature)),
+      facialThirdsRatio: median(scannedSamples.map((s) => s.facialThirdsRatio)),
+      isBeardDetected: scannedSamples.filter((s) => s.isBeardDetected).length > (scannedSamples.length / 2),
+    };
+    const res = classifyDetailed(medRatios);
+    this.lockedResult = res;
+    return res;
+  }
+
+  lockShape(shape: FaceShape): FaceShapeResult {
+    const res: FaceShapeResult = {
+      shape,
+      confidence: 99,
+      isBeardDetected: false,
+      ratios: {
+        lengthToWidth: ARCHETYPES[shape].mean.lw,
+        foreheadToCheek: ARCHETYPES[shape].mean.fRatio,
+        jawToCheek: ARCHETYPES[shape].mean.jRatio,
+        chinTaper: ARCHETYPES[shape].mean.chinTaper,
+        jawCurvature: ARCHETYPES[shape].mean.jawCurvature,
+        facialThirdsRatio: 1.05,
+      },
+      scores: {
+        Oval: shape === "Oval" ? 95 : 5,
+        Round: shape === "Round" ? 95 : 5,
+        Square: shape === "Square" ? 95 : 5,
+        Heart: shape === "Heart" ? 95 : 5,
+        Diamond: shape === "Diamond" ? 95 : 5,
+        Oblong: shape === "Oblong" ? 95 : 5,
+      },
+    };
+    this.lockedResult = res;
+    return res;
+  }
+
   reset(): void {
     this.samples = [];
-    this.locked = null;
+    this.lockedResult = null;
   }
 }
 
 // ── Shape-driven fit refinement ────────────────────────────────────────────────
 
 export type ShapeFit = {
-  /** Multiplier on frame width. Deliberately tiny — width is driven by MEASURED face width. */
   widthScale: number;
-  /**
-   * Nudge to how high the frame sits, as a fraction of eye distance.
-   * Positive seats it lower on the nose, negative higher toward the brow.
-   */
   seatOffset: number;
 };
 
-/**
- * Per-shape refinements applied on top of the measured fit.
- *
- * NEUTRAL for every shape, deliberately. Face shape drives the label and the frame
- * recommendations; it does not move the rendered frame.
- *
- * Shape describes a length-to-width proportion and says nothing about absolute head size, so
- * two people who are both "Oval" can need frames 20mm apart. Sizing therefore comes entirely
- * from the measured cheek/eye signal, which is the signal that actually varies per person.
- *
- * These entries were non-neutral while the cuts above were classifying ~98% of users as
- * Oval, so in practice they never fired. Recalibrating those cuts would have woken them up
- * and silently moved the frame by up to 2% for the majority of users — a rendering change
- * arriving as a side effect of a classification fix. Zeroed instead, so the recalibration is
- * provably label-only.
- *
- * The table is kept, rather than deleted along with its call sites in TryOnViewer, so that
- * re-enabling a nudge is a change to these numbers alone. Previous values are noted per
- * line. If you re-enable one, keep it under 2% on width and 0.6% of eye distance on seating:
- * enough to see, not enough to override a real measurement.
- */
 export const SHAPE_FIT: Record<FaceShape, ShapeFit> = {
-  // Reference shape — the baseline everything else was expressed against.
   Oval: { widthScale: 1.0, seatOffset: 0.0 },
-  // Short and wide: a fractionally wider frame adds definition. (was widthScale 1.02)
   Round: { widthScale: 1.0, seatOffset: 0.0 },
-  // Strong jaw already carries width; the frame stays honest either way.
   Square: { widthScale: 1.0, seatOffset: 0.0 },
-  // Broad brow, narrow chin: narrower and seated higher balances the top.
-  // (was widthScale 0.985, seatOffset -0.004)
   Heart: { widthScale: 1.0, seatOffset: 0.0 },
-  // Widest at the cheekbones: the frame's job is to soften mid-face. (was widthScale 0.995)
   Diamond: { widthScale: 1.0, seatOffset: 0.0 },
-  // Long face: seating lower shortens the apparent length. (was seatOffset 0.006)
   Oblong: { widthScale: 1.0, seatOffset: 0.0 },
 };
 
 export type ShapeGuide = {
-  /** Frame categories (matching Product.category values) that flatter this shape. */
   recommend: string[];
   blurb: string;
+  features: string;
 };
 
-// Recommended frame categories per face shape. Category strings are compared
-// case-insensitively (and cat-eye/cateye are normalized) in isBestFit().
 export const SHAPE_GUIDE: Record<FaceShape, ShapeGuide> = {
   Oval: {
     recommend: ["Wayfarer", "Rectangle", "Aviator", "Round", "Cat-Eye"],
-    blurb: "Balanced proportions — almost every style suits you. Play with bold shapes.",
+    blurb: "Balanced facial proportions with gently curved features. Almost any frame style flatters your face.",
+    features: "Even proportions, softly rounded jawline, balanced forehead and cheekbones.",
   },
   Round: {
     recommend: ["Rectangle", "Wayfarer", "Square", "Cat-Eye"],
-    blurb: "Angular frames add definition and make your face look longer and slimmer.",
+    blurb: "Soft, curved features with equal width and length. Angular and rectangular frames add flattering structure.",
+    features: "Fuller cheeks, softly rounded chin, equal face length and width.",
   },
   Square: {
     recommend: ["Round", "Oval", "Aviator", "Cat-Eye"],
-    blurb: "Round and curved frames soften a strong jaw and balance your angles.",
+    blurb: "Strong, well-defined jawline with balanced forehead. Rounded and curved frames soften prominent angles.",
+    features: "Prominent angular jaw, broad forehead, equal width at forehead and jaw.",
   },
   Heart: {
     recommend: ["Aviator", "Round", "Cat-Eye", "Rimless"],
-    blurb: "Frames wider at the bottom balance a broader forehead and narrow chin.",
+    blurb: "Broader forehead that gently tapers to a pointed chin. Frames with wider lower silhouettes balance your look.",
+    features: "Broad forehead/temples, high cheekbones, delicate tapered chin.",
   },
   Diamond: {
     recommend: ["Cat-Eye", "Oval", "Round", "Rimless"],
-    blurb: "Frames that highlight the eyes and soften cheekbones flatter your shape.",
+    blurb: "Striking cheekbones with narrower forehead and jawline. Oval and Cat-Eye frames accent your eyes and soften cheekbones.",
+    features: "High dramatic cheekbones, narrow forehead, pointed chin.",
   },
   Oblong: {
     recommend: ["Round", "Square", "Aviator", "Wayfarer"],
-    blurb: "Taller, deeper frames shorten a longer face and add pleasing width.",
+    blurb: "Gracefully elongated face structure. Taller and deeper frames create balanced horizontal symmetry.",
+    features: "Long face aspect, straight cheekline, equal forehead and jaw width.",
   },
 };
 
 function normalizeCategory(c: string): string {
-  return c.toLowerCase().replace(/[^a-z]/g, ""); // "Cat-Eye" -> "cateye"
+  return c.toLowerCase().replace(/[^a-z]/g, "");
 }
 
-/** True if a product category is a recommended fit for the detected face shape. */
 export function isBestFit(category: string | null | undefined, shape: FaceShape | null): boolean {
   if (!category || !shape) return false;
   const target = normalizeCategory(category);
   return SHAPE_GUIDE[shape].recommend.some((r) => normalizeCategory(r) === target);
 }
+

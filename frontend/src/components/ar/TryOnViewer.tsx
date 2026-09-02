@@ -13,22 +13,40 @@ import {
   FACE_SHAPE_LANDMARKS,
   FaceShapeStabilizer,
   SHAPE_FIT,
-  faceRatios,
+  extractAnthropometricRatios,
   type FaceShape,
+  type FaceShapeResult,
+  type DetailedRatios,
 } from "./faceShape";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export type TryOnStatus = "loading" | "ready" | "tracking" | "no-face" | "error";
 
+export type ScanState = "idle" | "aligning" | "scanning" | "completed" | "failed";
+
+export type ScanProgressEvent = {
+  state: ScanState;
+  progress: number; // 0 to 100
+  message: string;
+  result?: FaceShapeResult;
+};
+
 export type TryOnViewerHandle = {
   captureSnapshot: () => string | null;
+  startFaceScan: () => void;
+  cancelFaceScan: () => void;
+  resumeTryOn: () => void;
+  isScanning: () => boolean;
+  manualSetShape: (shape: FaceShape) => FaceShapeResult;
 };
 
 type TryOnViewerProps = {
   frameSrc?: string | null;
   onStatusChange?: (status: TryOnStatus, detail?: string) => void;
   onFaceShapeDetect?: (faceShape: string | null) => void;
+  onFaceShapeResult?: (result: FaceShapeResult | null) => void;
+  onScanProgress?: (event: ScanProgressEvent) => void;
   scaleOffset?: number;
   templeLength?: number;
   faceStretch?: number;
@@ -58,7 +76,7 @@ async function getMindARThree(): Promise<any> {
  * the webcam feed so the whole try-on reads crisp and premium instead of flat.
  * Kept subtle so skin tones stay natural.
  */
-const CAMERA_FILTER = "contrast(1.08) saturate(1.14) brightness(1.03)";
+const CAMERA_FILTER = "none";
 
 // ── AR placement tuning ─────────────────────────────────────────────────────────
 // Placement is driven by a landmark head-pose basis (eyes → right, forehead↔chin → up),
@@ -98,7 +116,7 @@ const AR = {
   // bent it -- the frame looked broken rather than worn. Rotating the whole arm about
   // its joint preserves every vertex's position relative to every other, so a straight
   // temple stays straight and only its direction changes. That is what a hinge does.
-  TEMPLE_SPLAY_STRENGTH: 1,
+  TEMPLE_SPLAY_STRENGTH: 0,
   // Cap on outward bend, as a fraction of the model's own half-width, so a bad head
   // measurement can never splay the arms into a wishbone.
   TEMPLE_SPLAY_MAX: 0.45,
@@ -114,7 +132,7 @@ const AR = {
   TEMPLE_EAR_DROP: 1.0,
   // Cap on the vertical aim, in world cm. The model already knows what angle its own arms
   // run at; this only corrects for ears sitting unusually high or low.
-  TEMPLE_AIM_MAX: 0.5,
+  TEMPLE_AIM_MAX: 0,
   // Arms are solved to reach the ear, then extended by this factor so they carry past it
   // and hook down behind, as real temples do, instead of stopping level with it.
   //
@@ -150,17 +168,16 @@ const AR = {
   //
   // MIN applies at rest, where nothing but noise is moving. SLOPE converts measured
   // speed into extra rate. MAX caps it so a tracking glitch cannot make the frame snap.
-  ADAPT_POS_MIN: 8,      // cm/s -> rate
-  ADAPT_POS_SLOPE: 1.4,
-  ADAPT_ROT_MIN: 6,      // rad/s -> rate
-  ADAPT_ROT_SLOPE: 15,
-  ADAPT_SCALE_MIN: 5,    // relative/s -> rate
-  ADAPT_SCALE_SLOPE: 40,
-  ADAPT_MAX: 45,
-  // The speed feeding the above is itself smoothed, or landmark noise would read as
-  // motion and hold the rate high permanently -- the failure that made One Euro's own
-  // beta of 10 counterproductive here.
-  ADAPT_SPEED_SMOOTH: 10,
+  ADAPT_POS_MIN: 12.0,     // Butter-smooth base position rate
+  ADAPT_POS_SLOPE: 1.2,    // Gentle acceleration on movement
+  ADAPT_ROT_MIN: 10.0,     // Silky head-turn rotation rate (eliminates yaw/pitch vibration)
+  ADAPT_ROT_SLOPE: 6.0,    // Smoothly tracks head turns without snappy oscillation
+  ADAPT_SCALE_MIN: 6.0,    // Rock-solid scale damping
+  ADAPT_SCALE_SLOPE: 10.0, // Scale follows natural depth changes
+  ADAPT_POS_MAX: 24.0,     // Upper bound prevents sudden vibration snaps
+  ADAPT_ROT_MAX: 22.0,     // Upper bound prevents angular jitter during head turns
+  ADAPT_SCALE_MAX: 16.0,   // Upper bound for scale
+  ADAPT_SPEED_SMOOTH: 8.0, // Stable velocity smoothing
   SMOOTH_SLIDER: 40, // while a slider is being dragged, respond immediately
   // cos of the maximum head turn whose landmarks are trusted for face-shape sampling.
   // 0.90 is about 25 degrees of yaw.
@@ -181,6 +198,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
       frameSrc,
       onStatusChange,
       onFaceShapeDetect,
+      onFaceShapeResult,
+      onScanProgress,
       scaleOffset,
       templeLength,
       faceStretch,
@@ -210,6 +229,11 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
     const faceSizeMultRef = useRef(1.0);
     /** Ref tracking whether face pose was active in the previous frame (for instant snap). */
     const wasTrackingRef = useRef(false);
+    /** Scanner state refs */
+    const scanStateRef = useRef<ScanState>("idle");
+    const scanSamplesRef = useRef<DetailedRatios[]>([]);
+    const scanAlignFramesRef = useRef<number>(0);
+    const lastResultRef = useRef<FaceShapeResult | null>(null);
     /** Ref tracking previous adjustments state to detect user slider interactions. */
     const lastAdjRef = useRef<any>(null);
     /** Previous frame's TARGET pose, for measuring how fast the head is really moving. */
@@ -280,7 +304,6 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
     const shapeAnchorsRef = useRef<Record<string, any> | null>(null);
     const shapeStabilizerRef = useRef(new FaceShapeStabilizer());
     const lastShapeRef = useRef<FaceShape | null>(null);
-    const shapeFrameRef = useRef(0);
     /** Smoothed per-shape fit refinement, lerped in so a first lock isn't a visible jump. */
     const shapeWidthRef = useRef(1);
     const shapeSeatRef = useRef(0);
@@ -716,6 +739,47 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
 
     useImperativeHandle(ref, () => ({
       captureSnapshot: () => takeSnapshotNow(),
+      startFaceScan: () => {
+        scanStateRef.current = "aligning";
+        scanSamplesRef.current = [];
+        scanAlignFramesRef.current = 0;
+        if (glassesRef.current) {
+          glassesRef.current.visible = false;
+        }
+        onScanProgress?.({
+          state: "aligning",
+          progress: 0,
+          message: "Center your face in the oval and look straight ahead",
+        });
+      },
+      cancelFaceScan: () => {
+        scanStateRef.current = "idle";
+        scanSamplesRef.current = [];
+        scanAlignFramesRef.current = 0;
+        if (glassesRef.current && wasTrackingRef.current) {
+          glassesRef.current.visible = true;
+        }
+        onScanProgress?.({
+          state: "idle",
+          progress: 0,
+          message: "",
+        });
+      },
+      resumeTryOn: () => {
+        scanStateRef.current = "idle";
+        if (glassesRef.current && wasTrackingRef.current) {
+          glassesRef.current.visible = true;
+        }
+      },
+      isScanning: () => scanStateRef.current === "aligning" || scanStateRef.current === "scanning",
+      manualSetShape: (shape: FaceShape) => {
+        const res = shapeStabilizerRef.current.lockShape(shape);
+        lastShapeRef.current = shape;
+        lastResultRef.current = res;
+        onFaceShapeDetect?.(shape);
+        onFaceShapeResult?.(res);
+        return res;
+      },
     }));
 
     // ── Init / teardown ────────────────────────────────────────────────────────
@@ -760,12 +824,10 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               container,
               maxTrack: 1,
               shouldFaceUser: true,
-              filterMinCF: 0.001,   // calm, jitter-free when the head is still
-              // Raised back from 4. Damping the tracker was the wrong place to fight
-              // jitter: it cost responsiveness on every frame, moving or not. The
-              // smoothing above now adapts to speed, so this layer can stay quick and
-              // the still-head case is handled where it can be handled without lag.
-              filterBeta: 8,
+              filterMinCF: 0.0005,   // was 0.001 — let raw landmarks through faster
+              // Raised from 8 to 12. More responsive to speed changes so the frame
+              // sticks during fast head turns instead of trailing behind.
+              filterBeta: 12,
               // Suppress MindAR's stock loading/scanning/error overlays — this component
               // renders its own status chrome, and MindAR's injected its own absolutely
               // positioned layers into the same container.
@@ -847,7 +909,7 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             // The cost is letterbox bars when the stream's shape differs from the panel's.
             // They sit on the studio's own near-black background, which is a far better
             // outcome than a face cropped to twice its size.
-            const isCompact = cw < 768;
+            const isCompact = window.innerWidth < 768;
             if (isCompact) {
               const fit = Math.min(cw / vw, ch / vh);
               w = vw * fit;
@@ -1167,27 +1229,20 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
            * are exactly the ones that degrade first. Feeding those in is how a stable measure
            * gets polluted by geometry that was never in question.
            */
-          const sampleFaceShape = (frontality: number) => {
+          const sampleFaceShapeDetailed = (frontality: number): DetailedRatios | null => {
             const sa = shapeAnchorsRef.current;
-            if (!onFaceShapeDetect || !sa) return;
-            if (frontality < AR.SHAPE_MIN_FRONTALITY) return;
+            if (!sa) return null;
+            if (frontality < AR.SHAPE_MIN_FRONTALITY) return null;
 
             const pts: Record<string, { x: number; y: number; z: number }> = {};
             for (const key of Object.keys(FACE_SHAPE_LANDMARKS)) {
               const g = sa[key]?.group;
-              if (!g || !g.visible) return; // a needed landmark isn't tracked right now
+              if (!g || !g.visible) return null; // a needed landmark isn't tracked right now
               g.getWorldPosition(_shapeVec);
               pts[key] = { x: _shapeVec.x, y: _shapeVec.y, z: _shapeVec.z };
             }
 
-            const r = faceRatios(pts as any);
-            if (!r) return;
-
-            const shape = shapeStabilizerRef.current.add(r);
-            if (shape && shape !== lastShapeRef.current) {
-              lastShapeRef.current = shape;
-              onFaceShapeDetect(shape);
-            }
+            return extractAnthropometricRatios(pts as any);
           };
 
           // ── Animation loop ─────────────────────────────────────────────
@@ -1284,10 +1339,51 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               // turned their head: a 142mm frame rendered at 181mm at a 35 degree turn.
               const frontality = Math.sqrt(Math.max(0, 1.0 - _right.z * _right.z));
 
-              // Face-shape sampling. Every 6th frame is ample: the stabiliser wants a few
-              // seconds of independent looks, not the same face 120 times a second.
-              shapeFrameRef.current++;
-              if (shapeFrameRef.current % 6 === 0) sampleFaceShape(frontality);
+              // ── Face-Shape Scanning & Background Sampling ─────────────
+              const isScanActive = scanStateRef.current === "aligning" || scanStateRef.current === "scanning";
+
+              if (isScanActive) {
+                if (frontality < 0.92) {
+                  scanAlignFramesRef.current = 0;
+                  onScanProgress?.({
+                    state: "aligning",
+                    progress: Math.min(100, Math.round((scanSamplesRef.current.length / 25) * 100)),
+                    message: "Please look straight ahead at the camera",
+                  });
+                } else {
+                  scanAlignFramesRef.current++;
+                  if (scanAlignFramesRef.current >= 3) {
+                    scanStateRef.current = "scanning";
+                    const sample = sampleFaceShapeDetailed(frontality);
+                    if (sample) {
+                      scanSamplesRef.current.push(sample);
+                      const pct = Math.min(100, Math.round((scanSamplesRef.current.length / 25) * 100));
+                      onScanProgress?.({
+                        state: "scanning",
+                        progress: pct,
+                        message: pct < 100 ? `Analyzing 3D facial proportions… ${pct}%` : "Calculating best match…",
+                      });
+
+                      if (scanSamplesRef.current.length >= 25) {
+                        scanStateRef.current = "completed";
+                        const res = shapeStabilizerRef.current.solveFromScan(scanSamplesRef.current);
+                        if (res) {
+                          lastShapeRef.current = res.shape;
+                          lastResultRef.current = res;
+                          onFaceShapeDetect?.(res.shape);
+                          onFaceShapeResult?.(res);
+                          onScanProgress?.({
+                            state: "completed",
+                            progress: 100,
+                            message: "Face shape identified!",
+                            result: res,
+                          });
+                        }
+                      }
+                    }
+                  }
+                }
+              }
 
               // ── Detect User Slider Adjustments ────────────────────────────
               if (lastAdjRef.current) {
@@ -1476,7 +1572,7 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               // stickiness differed between 60Hz and 144Hz panels.
               const posDelta = prevTargetPosRef.current.distanceTo(_pos);
               const rotDelta = prevTargetQuatRef.current.angleTo(_qTarget);
-              const poseMoved = posDelta > 1e-6 || rotDelta > 1e-6;
+              const poseMoved = posDelta > 0.0006 || rotDelta > 0.004;
 
               if (poseMoved) {
                 const since = Math.max(1e-3, loopTime - lastPoseChangeRef.current);
@@ -1511,19 +1607,20 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                 scaleSpeedRef.current = THREE.MathUtils.lerp(scaleSpeedRef.current, 0, kDecay);
               }
 
-              const rate = (min: number, slope: number, speed: number) =>
-                isSliderActive
-                  ? AR.SMOOTH_SLIDER
-                  : Math.min(AR.ADAPT_MAX, min + slope * speed);
-
               const kPos = 1.0 - Math.exp(
-                -rate(AR.ADAPT_POS_MIN, AR.ADAPT_POS_SLOPE, posSpeedRef.current) * clampedDt,
+                -(isSliderActive
+                  ? AR.SMOOTH_SLIDER
+                  : Math.min(AR.ADAPT_POS_MAX, AR.ADAPT_POS_MIN + AR.ADAPT_POS_SLOPE * posSpeedRef.current)) * clampedDt,
               );
               const kRot = 1.0 - Math.exp(
-                -rate(AR.ADAPT_ROT_MIN, AR.ADAPT_ROT_SLOPE, rotSpeedRef.current) * clampedDt,
+                -(isSliderActive
+                  ? AR.SMOOTH_SLIDER
+                  : Math.min(AR.ADAPT_ROT_MAX, AR.ADAPT_ROT_MIN + AR.ADAPT_ROT_SLOPE * rotSpeedRef.current)) * clampedDt,
               );
               const kScale = 1.0 - Math.exp(
-                -rate(AR.ADAPT_SCALE_MIN, AR.ADAPT_SCALE_SLOPE, scaleSpeedRef.current) * clampedDt,
+                -(isSliderActive
+                  ? AR.SMOOTH_SLIDER
+                  : Math.min(AR.ADAPT_SCALE_MAX, AR.ADAPT_SCALE_MIN + AR.ADAPT_SCALE_SLOPE * scaleSpeedRef.current)) * clampedDt,
               );
 
               // The frame is scaled UNIFORMLY. A previous 'aspect correction' stretched every
@@ -1544,8 +1641,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                 const s = THREE.MathUtils.lerp(glasses.scale.x, targetScale, kScale);
                 glasses.scale.set(s, s, s * templeZ);
               }
-
-              glasses.visible = true; // Show glasses when face pose is tracked
+              // Hide glasses during face scan and while scan modal is open so the face is unobstructed
+              glasses.visible = scanStateRef.current === "idle";
               reportStatus("tracking");
             } else {
               wasTrackingRef.current = false;
@@ -1562,6 +1659,15 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                 shapeStabilizerRef.current.reset();
                 lastShapeRef.current = null;
                 onFaceShapeDetect?.(null);
+                onFaceShapeResult?.(null);
+              }
+              if (scanStateRef.current === "aligning" || scanStateRef.current === "scanning") {
+                scanAlignFramesRef.current = 0;
+                onScanProgress?.({
+                  state: "aligning",
+                  progress: 0,
+                  message: "No face detected — please position your face in the frame",
+                });
               }
               if (glasses) {
                 glasses.visible = false; // Hide glasses completely when no face is detected
