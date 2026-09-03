@@ -89,6 +89,7 @@ export default function VirtualTryOnPage() {
   const [showScanOverlay,    setShowScanOverlay]    = useState<boolean>(false);
   const [showResultModal,    setShowResultModal]    = useState<boolean>(false);
   const [showManualShapeModal, setShowManualShapeModal] = useState<boolean>(false);
+  const [mobileFramesOpen,   setMobileFramesOpen]   = useState<boolean>(true);
   // On a phone the info cards blanketed roughly 40% of the camera view — including the
   // face they describe. They start collapsed to chips there and expand on tap; on
   // desktop there is room, so they are always open.
@@ -165,25 +166,17 @@ export default function VirtualTryOnPage() {
     return ["All", ...Array.from(set)];
   }, [products]);
 
-  // Filter products by selected category, then (once a face shape is detected) float the
-  // recommended "best fit" frames to the top so the most flattering options come first.
+  // Filter products by selected category (studio catalog remains stable and unaffected by face shape detection)
   const filteredProducts = useMemo(() => {
-    const base =
-      selectedCategory === "All"
-        ? products
-        : products.filter((p) => p.category?.toLowerCase() === selectedCategory.toLowerCase());
-    if (!detectedShape) return base;
-    return [...base].sort((a, b) => {
-      const af = isBestFit(a.category, detectedShape) ? 0 : 1;
-      const bf = isBestFit(b.category, detectedShape) ? 0 : 1;
-      return af - bf;
-    });
-  }, [products, selectedCategory, detectedShape]);
+    return selectedCategory === "All"
+      ? products
+      : products.filter((p) => p.category?.toLowerCase() === selectedCategory.toLowerCase());
+  }, [products, selectedCategory]);
 
-  // Extract the top 3 best-fit frames to show directly under the Re-scan option
-  const bestFitProducts = useMemo(() => {
+  // Extract recommended frames for the detected face shape
+  const shapeRecommendedProducts = useMemo(() => {
     if (!detectedShape) return [];
-    return products.filter((p) => isBestFit(p.category, detectedShape)).slice(0, 3);
+    return products.filter((p) => isBestFit(p.category, detectedShape));
   }, [products, detectedShape]);
 
   const frameSrc = useMemo(() => {
@@ -413,9 +406,9 @@ export default function VirtualTryOnPage() {
       {/* AR Camera Section */}
       <section className="relative flex-1 min-h-0 bg-gradient-to-br from-[#faf5ff] to-[#fdf2f8] dark:from-[#020617] dark:to-[#020617] overflow-hidden flex items-center justify-center">
         {hasConsent ? (
-          <div className="absolute inset-0 w-full h-full flex items-center justify-center bg-gradient-to-br from-[#faf5ff] to-[#fdf2f8] dark:from-[#020617] dark:to-[#020617] p-2 sm:p-4">
-            {/* Portrait camera mirror — centered horizontally, 3:4 aspect ratio */}
-            <div className="relative h-[calc(100%-1.5rem)] md:h-[calc(100%-2.5rem)] aspect-[3/4] max-w-full overflow-hidden bg-slate-950 rounded-2xl md:rounded-3xl border border-purple-500/20 shadow-[0_0_50px_rgba(15,23,42,0.3)] dark:shadow-[0_0_60px_rgba(0,0,0,0.9)]">
+          <div className="absolute inset-0 w-full h-full flex items-center justify-center bg-gradient-to-br from-[#faf5ff] to-[#fdf2f8] dark:from-[#020617] dark:to-[#020617] p-1 sm:p-4">
+            {/* Portrait camera mirror — maximized full space on mobile, centered 3:4 on desktop */}
+            <div className="relative w-full h-full md:w-auto md:h-[calc(100%-2.5rem)] md:aspect-[3/4] max-w-full overflow-hidden bg-slate-950 rounded-2xl md:rounded-3xl border border-purple-500/20 shadow-[0_0_50px_rgba(15,23,42,0.3)] dark:shadow-[0_0_60px_rgba(0,0,0,0.9)]">
               <TryOnViewer
                 ref={viewerRef}
                 frameSrc={frameSrc}
@@ -693,47 +686,16 @@ export default function VirtualTryOnPage() {
                 </button>
               )}
 
-              {/* 3 Best Fit Frames for Face Shape — Visible on both mobile and desktop under Re-scan */}
-              {!showScanOverlay && detectedShape && bestFitProducts.length > 0 && (
-                <div className="flex flex-col gap-1 sm:gap-1.5 p-1.5 sm:p-2.5 rounded-2xl border border-purple-200/80 dark:border-purple-500/30 bg-white/95 dark:bg-slate-950/85 backdrop-blur-xl shadow-xl w-[145px] sm:w-[200px] animate-in fade-in slide-in-from-right-2 duration-200">
-                  <div className="flex items-center justify-between px-1">
-                    <span className="text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wider text-purple-600 dark:text-purple-400 flex items-center gap-1">
-                      <span>✨</span> 3 Best Fits
-                    </span>
-                    <span className="text-[7px] sm:text-[8px] font-bold text-white bg-gradient-to-r from-purple-600 to-pink-500 px-1.5 sm:px-2 py-0.5 rounded-full shadow-sm">
-                      {detectedShape}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-col gap-1 sm:gap-1.5">
-                    {bestFitProducts.map((p) => {
-                      const isSelected = p.id === selectedId;
-                      return (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onClick={() => {
-                            viewerRef.current?.resumeTryOn();
-                            handleSelect(p.id);
-                          }}
-                          className={`flex items-center gap-1.5 sm:gap-2 p-1 sm:p-1.5 rounded-xl text-left transition-all cursor-pointer ${
-                            isSelected
-                              ? "border border-purple-500 bg-purple-100/80 dark:bg-purple-500/15 ring-1 ring-purple-500/30 text-purple-950 dark:text-white font-bold shadow-md"
-                              : "bg-purple-50/70 hover:bg-purple-100/70 dark:bg-slate-900/60 dark:hover:bg-slate-850 text-slate-900 dark:text-white border border-purple-100 dark:border-slate-800"
-                          }`}
-                        >
-                          <div className="h-6 w-6 sm:h-7 sm:w-7 rounded-lg overflow-hidden bg-slate-900 shrink-0 border border-slate-700/50">
-                            <img src={displayImageUrl(p)} alt={p.name} className="h-full w-full object-cover" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className={`text-[9px] sm:text-[10px] truncate leading-tight ${isSelected ? "text-purple-900 dark:text-purple-200 font-bold" : "text-slate-900 dark:text-white font-medium"}`}>{p.name}</p>
-                            <p className={`text-[7px] sm:text-[8px] truncate ${isSelected ? "text-purple-700 dark:text-purple-300 font-semibold" : "text-slate-500 dark:text-slate-400"}`}>{formatPrice(p.price)}</p>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+              {/* Reopen Face Shape Recommendation Glasses Modal — Reopenable anytime */}
+              {!showScanOverlay && detectedShape && (
+                <button
+                  type="button"
+                  onClick={() => setShowResultModal(true)}
+                  className="flex items-center gap-1.5 rounded-2xl bg-white/95 dark:bg-slate-950/85 border border-purple-200/80 dark:border-purple-500/30 px-3 py-1.5 backdrop-blur-md shadow-lg hover:bg-white dark:hover:bg-slate-900 text-slate-900 dark:text-white text-[10px] sm:text-xs font-bold transition-all cursor-pointer active:scale-95"
+                >
+                  <MaterialIcon name="auto_awesome" className="!text-xs text-purple-600 dark:text-purple-400" />
+                  <span>{detectedShape} Recommendations</span>
+                </button>
               )}
             </div>
 
@@ -1159,6 +1121,20 @@ export default function VirtualTryOnPage() {
             {!showScanOverlay && (
               <div className="absolute bottom-0 left-1/2 -translate-x-1/2 z-10 w-full flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pointer-events-none">
                 <div className="glass-chrome pointer-events-auto flex items-center gap-2 sm:gap-3 rounded-[26px] px-3 sm:px-5 py-2 sm:py-2.5 float-in">
+                  {/* Mobile Frame Catalog Toggle (Closable & Reopenable on mobile) */}
+                  <button
+                    type="button"
+                    onClick={() => setMobileFramesOpen((prev) => !prev)}
+                    className={`flex flex-col items-center gap-1 transition-colors active:scale-95 md:hidden ${mobileFramesOpen ? "text-purple-600 dark:text-purple-300" : "text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-white"}`}
+                  >
+                    <span className={`flex h-11 w-11 sm:h-10 sm:w-10 items-center justify-center rounded-2xl ring-1 transition-colors ${mobileFramesOpen ? "bg-purple-500/25 ring-purple-400/40 shadow-[0_0_16px_-2px_rgba(168,85,247,0.6)]" : "bg-purple-50 dark:bg-white/5 hover:bg-purple-100 dark:hover:bg-white/10 ring-purple-200/60 dark:ring-white/5"}`}>
+                      <MaterialIcon name={mobileFramesOpen ? "expand_more" : "view_carousel"} className="!text-lg" />
+                    </span>
+                    <span className="text-[9px] font-semibold tracking-wide">{mobileFramesOpen ? "Close" : "Frames"}</span>
+                  </button>
+
+                  <div className="h-9 w-px bg-purple-200/80 dark:bg-white/10 md:hidden" />
+
                   <button
                     type="button"
                     onClick={handleSnapshot}
@@ -1292,93 +1268,109 @@ export default function VirtualTryOnPage() {
         )}
       </aside>
 
-      {/* Mobile Catalog Horizontal Carousel */}
-      <section className="md:hidden shrink-0 flex flex-col bg-white/95 dark:bg-slate-950/95 border-t border-purple-200/80 dark:border-purple-500/20 max-h-[38dvh]">
-        <div className="flex items-center justify-between px-4 pt-3 pb-1.5 shrink-0">
-          <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-900 dark:text-white">
-            {selectedCategory === "All" ? "Select Frame" : selectedCategory} · {filteredProducts.length}
-          </h3>
+      {/* Mobile Catalog Horizontal Carousel — Closable & Reopenable */}
+      {mobileFramesOpen && (
+        <section className="md:hidden shrink-0 flex flex-col bg-white/95 dark:bg-slate-950/95 border-t border-purple-200/80 dark:border-purple-500/20 max-h-[38dvh] animate-in slide-in-from-bottom duration-300">
+          <div className="flex items-center justify-between px-4 pt-3 pb-1.5 shrink-0">
+            <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-900 dark:text-white">
+              {selectedCategory === "All" ? "Select Frame" : selectedCategory} · {filteredProducts.length}
+            </h3>
 
-          {/* Mobile Category Select */}
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            className="tryon-chrome-select text-[11px] font-bold bg-purple-50 text-slate-800 dark:bg-slate-900 dark:text-slate-200 border border-purple-200 dark:border-white/10 rounded-lg px-2.5 py-1"
-          >
-            {categories.map((c) => (
-              <option key={c} value={c} className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">{c}</option>
-            ))}
-          </select>
-        </div>
+            <div className="flex items-center gap-2">
+              {/* Mobile Category Select */}
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="tryon-chrome-select text-[11px] font-bold bg-purple-50 text-slate-800 dark:bg-slate-900 dark:text-slate-200 border border-purple-200 dark:border-white/10 rounded-lg px-2.5 py-1"
+              >
+                {categories.map((c) => (
+                  <option key={c} value={c} className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">{c}</option>
+                ))}
+              </select>
 
-        <div className="flex gap-3 overflow-x-auto px-4 pt-1 pb-[max(1rem,env(safe-area-inset-bottom))] snap-x snap-mandatory scrollbar-none">
-          {loadingCatalog ? (
-            <div className="flex items-center justify-center w-full py-6">
-              <LoadingSpinner size="sm" message="Loading…" />
+              {/* Close Button to dismiss mobile frame selector */}
+              <button
+                type="button"
+                onClick={() => setMobileFramesOpen(false)}
+                aria-label="Close frames tray"
+                className="rounded-lg p-1 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white bg-purple-50 dark:bg-slate-900 border border-purple-200 dark:border-white/10 transition-colors cursor-pointer"
+              >
+                <MaterialIcon name="close" className="!text-base" />
+              </button>
             </div>
-          ) : filteredProducts.length === 0 ? (
-            <div className="py-6 text-center text-[10px] text-slate-500 w-full">
-              No products found.
-            </div>
-          ) : (
-            filteredProducts.map((p) => {
-              const active = p.id === selectedId;
+          </div>
 
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => handleSelect(p.id)}
-                  className={`relative flex w-[92px] shrink-0 snap-start flex-col rounded-2xl border p-2 text-left transition-all ${
-                    active
-                      ? "border-purple-500 bg-purple-50 dark:bg-purple-500/10 ring-2 ring-purple-500/30 shadow-md"
-                      : "border-purple-100 dark:border-slate-900 bg-white dark:bg-slate-900/30 shadow-sm"
-                  }`}
-                >
-                  <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-slate-900 border border-purple-100 dark:border-slate-800/80">
-                    <img src={displayImageUrl(p)} alt={p.name} className="h-full w-full object-cover" />
-                    {active && (
-                      <span className="absolute right-1 top-1 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-purple-500 shadow-md">
-                        <MaterialIcon name="check" className="!text-[9px] text-white" />
-                      </span>
-                    )}
-                  </div>
-                  <p className={`mt-1 truncate text-[9px] font-bold px-0.5 ${active ? "text-purple-900 dark:text-white" : "text-slate-900 dark:text-slate-200"}`}>{p.name}</p>
-                  <p className="truncate text-[8px] text-purple-600 dark:text-purple-400 font-semibold px-0.5">{formatPrice(p.price)}</p>
-                </button>
-              );
-            })
-          )}
-        </div>
-      </section>
+          <div className="flex gap-3 overflow-x-auto px-4 pt-1 pb-[max(1rem,env(safe-area-inset-bottom))] snap-x snap-mandatory scrollbar-none">
+            {loadingCatalog ? (
+              <div className="flex items-center justify-center w-full py-6">
+                <LoadingSpinner size="sm" message="Loading…" />
+              </div>
+            ) : filteredProducts.length === 0 ? (
+              <div className="py-6 text-center text-[10px] text-slate-500 w-full">
+                No products found.
+              </div>
+            ) : (
+              filteredProducts.map((p) => {
+                const active = p.id === selectedId;
 
-      {/* Face Scan Result Modal / Sheet */}
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => handleSelect(p.id)}
+                    className={`relative flex w-[92px] shrink-0 snap-start flex-col rounded-2xl border p-2 text-left transition-all ${
+                      active
+                        ? "border-purple-500 bg-purple-50 dark:bg-purple-500/10 ring-2 ring-purple-500/30 shadow-md"
+                        : "border-purple-100 dark:border-slate-900 bg-white dark:bg-slate-900/30 shadow-sm"
+                    }`}
+                  >
+                    <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-slate-900 border border-purple-100 dark:border-slate-800/80">
+                      <img src={displayImageUrl(p)} alt={p.name} className="h-full w-full object-cover" />
+                      {active && (
+                        <span className="absolute right-1 top-1 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-purple-500 shadow-md">
+                          <MaterialIcon name="check" className="!text-[9px] text-white" />
+                        </span>
+                      )}
+                    </div>
+                    <p className={`mt-1 truncate text-[9px] font-bold px-0.5 ${active ? "text-purple-900 dark:text-white" : "text-slate-900 dark:text-slate-200"}`}>{p.name}</p>
+                    <p className="truncate text-[8px] text-purple-600 dark:text-purple-400 font-semibold px-0.5">{formatPrice(p.price)}</p>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* Face Scan Result & Recommended Glasses Modal — Closable & Reopenable */}
       {showResultModal && detectedShape && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="relative w-full max-w-sm rounded-3xl border border-purple-200/80 dark:border-purple-500/30 bg-white dark:bg-slate-950/95 p-5 sm:p-6 shadow-2xl flex flex-col gap-4 animate-in zoom-in-95 duration-200 text-slate-900 dark:text-white">
+        <div className="fixed inset-0 z-40 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="relative w-full max-w-md max-h-[90dvh] rounded-3xl border border-purple-200/80 dark:border-purple-500/30 bg-white dark:bg-slate-950/95 p-4 sm:p-6 shadow-2xl flex flex-col gap-3 animate-in zoom-in-95 duration-200 text-slate-900 dark:text-white overflow-hidden">
             <button
               type="button"
               onClick={() => {
                 viewerRef.current?.resumeTryOn();
                 setShowResultModal(false);
               }}
-              className="absolute top-4 right-4 rounded-full p-1.5 text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-purple-50 dark:hover:bg-slate-800 transition-colors"
+              aria-label="Close recommendations"
+              className="absolute top-4 right-4 rounded-full p-1.5 text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-purple-50 dark:hover:bg-slate-800 transition-colors cursor-pointer z-10"
             >
               <MaterialIcon name="close" className="!text-lg" />
             </button>
 
-            <div className="flex items-center gap-3">
-              <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-purple-600 to-pink-500 flex items-center justify-center text-white shadow-lg shadow-purple-500/30 shrink-0">
+            {/* Header */}
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="h-11 w-11 rounded-2xl bg-gradient-to-tr from-purple-600 to-pink-500 flex items-center justify-center text-white shadow-lg shadow-purple-500/30 shrink-0">
                 <MaterialIcon name="auto_awesome" className="!text-2xl" />
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 pr-8">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-purple-600 dark:text-purple-400">Analysis Result</span>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white leading-tight">{detectedShape} Face Shape</h3>
+                <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-tight">{detectedShape} Face Shape</h3>
               </div>
             </div>
 
             {/* Badges */}
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 shrink-0">
               {shapeResult && (
                 <span className="rounded-full bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30 px-2.5 py-0.5 text-[10px] font-bold">
                   {shapeResult.confidence}% Match
@@ -1391,46 +1383,99 @@ export default function VirtualTryOnPage() {
               )}
             </div>
 
-            <div className="space-y-2 rounded-2xl bg-purple-50/70 dark:bg-slate-900/70 border border-purple-100 dark:border-slate-800 p-3.5 text-xs text-slate-700 dark:text-slate-300">
+            {/* Shape Guide info */}
+            <div className="space-y-1 rounded-2xl bg-purple-50/70 dark:bg-slate-900/70 border border-purple-100 dark:border-slate-800 p-2.5 sm:p-3 text-xs text-slate-700 dark:text-slate-300 shrink-0">
               <p><strong className="text-purple-700 dark:text-purple-400 font-semibold">Features:</strong> {SHAPE_GUIDE[detectedShape].features}</p>
               <p><strong className="text-purple-700 dark:text-purple-400 font-semibold">Best Styles:</strong> {SHAPE_GUIDE[detectedShape].recommend.join(", ")}</p>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed italic mt-1">{SHAPE_GUIDE[detectedShape].blurb}</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed italic mt-0.5">{SHAPE_GUIDE[detectedShape].blurb}</p>
+            </div>
+
+            {/* Recommended Glasses for this shape (Closable & Reopenable) */}
+            <div className="flex-1 overflow-y-auto min-h-0 space-y-2 custom-scrollbar pr-1">
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400 flex items-center gap-1">
+                  <span>✨</span> Recommended Glasses ({shapeRecommendedProducts.length})
+                </span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                  Tap to Try On
+                </span>
+              </div>
+
+              {shapeRecommendedProducts.length === 0 ? (
+                <p className="text-xs text-slate-500 py-3 text-center">No specific frames found matching this shape.</p>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {shapeRecommendedProducts.map((p) => {
+                    const isSelected = p.id === selectedId;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          viewerRef.current?.resumeTryOn();
+                          handleSelect(p.id);
+                          setShowResultModal(false);
+                        }}
+                        className={`group flex flex-col p-2 rounded-2xl border text-left transition-all cursor-pointer ${
+                          isSelected
+                            ? "border-purple-500 bg-purple-100/80 dark:bg-purple-500/20 ring-2 ring-purple-500 shadow-md"
+                            : "border-purple-100 dark:border-slate-800 bg-purple-50/40 hover:bg-purple-100/60 dark:bg-slate-900/50 dark:hover:bg-slate-850"
+                        }`}
+                      >
+                        <div className="aspect-[4/3] w-full rounded-xl overflow-hidden bg-slate-900 mb-1.5 border border-purple-100 dark:border-slate-800">
+                          <img src={displayImageUrl(p)} alt={p.name} className="h-full w-full object-cover group-hover:scale-105 transition-transform" />
+                        </div>
+                        <p className={`text-[10px] font-bold truncate leading-tight ${isSelected ? "text-purple-950 dark:text-white" : "text-slate-900 dark:text-slate-100"}`}>
+                          {p.name}
+                        </p>
+                        <div className="mt-0.5 flex items-center justify-between">
+                          <span className="text-[9px] font-semibold text-purple-600 dark:text-purple-400">
+                            {formatPrice(p.price)}
+                          </span>
+                          <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${
+                            isSelected
+                              ? "bg-purple-600 text-white"
+                              : "bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300"
+                          }`}>
+                            {isSelected ? "Active" : "Try On"}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Actions */}
-            <div className="flex flex-col gap-2 pt-1">
+            <div className="flex gap-2 pt-2 border-t border-purple-100 dark:border-slate-800 shrink-0">
               <button
                 type="button"
                 onClick={() => {
                   setShowResultModal(false);
-                  viewerRef.current?.resumeTryOn();
-                  const best = filteredProducts.find((p) => isBestFit(p.category, detectedShape));
-                  if (best) handleSelect(best.id);
+                  setShowManualShapeModal(true);
                 }}
-                className="w-full rounded-2xl bg-gradient-to-r from-purple-600 to-pink-500 py-3 text-xs sm:text-sm font-bold text-white shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 active:scale-95 transition-all cursor-pointer"
+                className="flex-1 rounded-2xl border border-purple-200 dark:border-slate-700 bg-purple-50 hover:bg-purple-100 dark:bg-slate-900/80 dark:hover:bg-slate-800 py-2.5 text-xs font-semibold text-slate-800 dark:text-slate-300 dark:hover:text-white transition-colors cursor-pointer"
               >
-                ✨ View Recommended Glasses
+                Change Shape
               </button>
-
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowResultModal(false);
-                    setShowManualShapeModal(true);
-                  }}
-                  className="flex-1 rounded-2xl border border-purple-200 dark:border-slate-700 bg-purple-50 hover:bg-purple-100 dark:bg-slate-900/80 dark:hover:bg-slate-800 py-2.5 text-xs font-semibold text-slate-800 dark:text-slate-300 dark:hover:text-white transition-colors cursor-pointer"
-                >
-                  Change Shape
-                </button>
-                <button
-                  type="button"
-                  onClick={handleStartScan}
-                  className="flex-1 rounded-2xl border border-purple-200 dark:border-slate-700 bg-purple-50 hover:bg-purple-100 dark:bg-slate-900/80 dark:hover:bg-slate-800 py-2.5 text-xs font-semibold text-slate-800 dark:text-slate-300 dark:hover:text-white transition-colors cursor-pointer"
-                >
-                  Re-scan
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={handleStartScan}
+                className="flex-1 rounded-2xl border border-purple-200 dark:border-slate-700 bg-purple-50 hover:bg-purple-100 dark:bg-slate-900/80 dark:hover:bg-slate-800 py-2.5 text-xs font-semibold text-slate-800 dark:text-slate-300 dark:hover:text-white transition-colors cursor-pointer"
+              >
+                Re-scan
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  viewerRef.current?.resumeTryOn();
+                  setShowResultModal(false);
+                }}
+                className="rounded-2xl bg-gradient-to-r from-purple-600 to-pink-500 px-4 py-2.5 text-xs font-bold text-white shadow-md active:scale-95 transition-all cursor-pointer"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
