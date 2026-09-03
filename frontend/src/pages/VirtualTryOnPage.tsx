@@ -43,12 +43,12 @@ interface Adjustments {
 // to 0.82, which shrank the composited feed and left black bars on every screen — worst on
 // phones, where it pushed the face into a small box. faceStretch 1.0 keeps the feed
 // undistorted; both remain user-adjustable.
-const BASELINE: Adjustments = { scale: 0.82, templeLength: 1.0, faceStretch: 1.0, zoom: 1.0, x: 0.0, y: 0.0, z: 0.0, rx: 0.0, ry: 0.0, rz: 0.0 };
+const BASELINE: Adjustments = { scale: 0.90, templeLength: 1.65, faceStretch: 1.0, zoom: 1.0, x: 0.0, y: 0.0, z: 0.0, rx: 0.0, ry: 0.0, rz: 0.0 };
 const DEFAULT_ADJUSTMENTS: Record<string, Adjustments> = {
   default:  { ...BASELINE },
   wayfarer: { ...BASELINE },
-  aviator:  { ...BASELINE, scale: 0.97 },
-  cateye:   { ...BASELINE, scale: 0.93 },
+  aviator:  { ...BASELINE },
+  cateye:   { ...BASELINE },
   round:    { ...BASELINE },
   oval:     { ...BASELINE },
 };
@@ -97,6 +97,7 @@ export default function VirtualTryOnPage() {
   const [hasConsent,         setHasConsent]         = useState(() =>
     localStorage.getItem("specsvision_cam_consent") === "true",
   );
+  const [showZoomMenu,       setShowZoomMenu]       = useState(false);
 
   // Adjustments & Presets States
   const [showAdjust,         setShowAdjust]         = useState(false);
@@ -143,7 +144,7 @@ export default function VirtualTryOnPage() {
   useEffect(() => {
     if (selectedId === null) return;
     const getInitialAdjustments = (): Adjustments => {
-      const saved = localStorage.getItem(`specsvision_adj_v15_${selectedId}`);
+      const saved = localStorage.getItem(`specsvision_adj_v18_${selectedId}`);
       if (saved) {
         try {
           return JSON.parse(saved);
@@ -267,7 +268,7 @@ export default function VirtualTryOnPage() {
     setAdjustments((prev) => {
       const next = { ...prev, [key]: value };
       if (selectedId !== null) {
-        localStorage.setItem(`specsvision_adj_v15_${selectedId}`, JSON.stringify(next));
+        localStorage.setItem(`specsvision_adj_v18_${selectedId}`, JSON.stringify(next));
       }
       return next;
     });
@@ -1013,8 +1014,8 @@ export default function VirtualTryOnPage() {
                         <div className="flex items-center gap-3">
                           <input
                             type="range"
-                            min="1.00"
-                            max="1.60"
+                            min="0.50"
+                            max="2.00"
                             step="0.01"
                             value={adjustments.zoom}
                             onChange={(e) => updateAdjustment("zoom", parseFloat(e.target.value))}
@@ -1028,7 +1029,7 @@ export default function VirtualTryOnPage() {
                             Reset
                           </button>
                         </div>
-                        <p className="text-[9px] text-slate-500 dark:text-slate-400 mt-1">100% fills the screen. Higher crops in closer on your face.</p>
+                        <p className="text-[9px] text-slate-500 dark:text-slate-400 mt-1">Below 100% zooms out for a wider view. Above 100% crops in closer on your face.</p>
                       </div>
 
                       {/* Face Shape Stretch: Y-axis vertical beauty scaler */}
@@ -1119,8 +1120,8 @@ export default function VirtualTryOnPage() {
 
             {/* Bottom floating action bar — hidden during face scanning */}
             {!showScanOverlay && (
-              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 z-10 w-full flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pointer-events-none">
-                <div className="glass-chrome pointer-events-auto flex items-center gap-2 sm:gap-3 rounded-[26px] px-3 sm:px-5 py-2 sm:py-2.5 float-in">
+              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 z-30 w-full flex justify-center px-2 sm:px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pointer-events-none">
+                <div className="glass-chrome pointer-events-auto flex items-center gap-1.5 sm:gap-3 rounded-[26px] px-2.5 sm:px-5 py-2 sm:py-2.5 float-in max-w-full">
                   {/* Mobile Frame Catalog Toggle (Closable & Reopenable on mobile) */}
                   <button
                     type="button"
@@ -1134,6 +1135,96 @@ export default function VirtualTryOnPage() {
                   </button>
 
                   <div className="h-9 w-px bg-purple-200/80 dark:bg-white/10 md:hidden" />
+
+                  {/* Single Zoom Button with floating popup options directly above */}
+                  <div className="relative flex flex-col items-center">
+                    {/* Popover options directly above the Zoom button */}
+                    {showZoomMenu && (
+                      <>
+                        {/* Full-screen click-outside dismisser */}
+                        <div
+                          className="fixed inset-0 z-30 cursor-default pointer-events-auto"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowZoomMenu(false);
+                          }}
+                        />
+                        <div className="absolute bottom-[calc(100%+14px)] left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex items-center gap-1.5 bg-slate-950/95 dark:bg-black/95 backdrop-blur-xl rounded-full border border-purple-500/40 p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.8)] animate-in fade-in zoom-in-95 duration-150 whitespace-nowrap">
+                          <button
+                            type="button"
+                            onPointerDown={(e) => {
+                              e.stopPropagation();
+                              updateAdjustment("zoom", 0.5);
+                              setShowZoomMenu(false);
+                            }}
+                            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none ${
+                              adjustments.zoom <= 0.7
+                                ? "bg-purple-600 text-white shadow-md shadow-purple-500/50"
+                                : "text-slate-300 hover:text-white hover:bg-white/10"
+                            }`}
+                          >
+                            .5×
+                          </button>
+                          <button
+                            type="button"
+                            onPointerDown={(e) => {
+                              e.stopPropagation();
+                              updateAdjustment("zoom", 1.0);
+                              setShowZoomMenu(false);
+                            }}
+                            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none ${
+                              adjustments.zoom > 0.7 && adjustments.zoom <= 1.4
+                                ? "bg-purple-600 text-white shadow-md shadow-purple-500/50"
+                                : "text-slate-300 hover:text-white hover:bg-white/10"
+                            }`}
+                          >
+                            1×
+                          </button>
+                          <button
+                            type="button"
+                            onPointerDown={(e) => {
+                              e.stopPropagation();
+                              updateAdjustment("zoom", 2.0);
+                              setShowZoomMenu(false);
+                            }}
+                            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none ${
+                              adjustments.zoom > 1.4
+                                ? "bg-purple-600 text-white shadow-md shadow-purple-500/50"
+                                : "text-slate-300 hover:text-white hover:bg-white/10"
+                            }`}
+                          >
+                            2×
+                          </button>
+                        </div>
+                      </>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowZoomMenu((prev) => !prev);
+                      }}
+                      className={`flex flex-col items-center gap-1 transition-colors active:scale-95 ${
+                        showZoomMenu
+                          ? "text-purple-600 dark:text-purple-300"
+                          : "text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-white"
+                      }`}
+                    >
+                      <span className={`flex h-11 w-11 sm:h-10 sm:w-10 items-center justify-center rounded-2xl ring-1 transition-colors ${
+                        showZoomMenu
+                          ? "bg-purple-500/25 ring-purple-400/40 shadow-[0_0_16px_-2px_rgba(168,85,247,0.6)]"
+                          : "bg-purple-50 dark:bg-white/5 hover:bg-purple-100 dark:hover:bg-white/10 ring-purple-200/60 dark:ring-white/5"
+                      }`}>
+                        <span className="font-mono font-bold text-xs text-purple-600 dark:text-purple-300">
+                          {adjustments.zoom <= 0.7 ? ".5×" : adjustments.zoom <= 1.4 ? "1×" : "2×"}
+                        </span>
+                      </span>
+                      <span className="text-[9px] font-semibold tracking-wide">Zoom</span>
+                    </button>
+                  </div>
+
+                  <div className="h-9 w-px bg-purple-200/80 dark:bg-white/10" />
 
                   <button
                     type="button"

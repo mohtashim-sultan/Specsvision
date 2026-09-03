@@ -326,8 +326,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
     // Target adjustment values set by React props (updated via useEffect).
     // The animation loop reads these via ref to avoid stale closures.
     const adjustmentsRef = useRef({
-      scale: 1.0,
-      templeLength: 1.0,
+      scale: 0.90,
+      templeLength: 1.65,
       faceStretch: 1.0,
       cameraZoom: 1.0,
       positionX: 0.0,
@@ -341,8 +341,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
 
     useEffect(() => {
       adjustmentsRef.current = {
-        scale: scaleOffset ?? 1.0,
-        templeLength: templeLength ?? 1.0,
+        scale: scaleOffset ?? 0.90,
+        templeLength: templeLength ?? 1.65,
         faceStretch: faceStretch ?? 1.0,
         cameraZoom: cameraZoom ?? 1.0,
         positionX: positionX ?? 0.0,
@@ -911,8 +911,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             // outcome than a face cropped to twice its size.
             const isCompact = window.innerWidth < 768;
             if (isCompact) {
-              // On mobile, maximize the vertical length of the camera feed so it completely fills the height
-              const fit = Math.max(cw / vw, ch / vh);
+              // Phones FIT the whole camera frame so the face isn't overly magnified / cropped
+              const fit = Math.min(cw / vw, ch / vh);
               w = vw * fit;
               h = vh * fit;
             } else if (vAsp > cAsp) {
@@ -923,9 +923,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               h = cw / vAsp;
             }
 
-            // Still clamped to >= 1: on a phone that now means "the whole frame" as the
-            // widest view, and the slider can only crop in from there.
-            const zoom = Math.max(1, adjustmentsRef.current.cameraZoom ?? 1);
+            // Allow zooming out (< 1) down to 0.4 for wider FOV or in for tighter crop
+            const zoom = Math.max(0.4, cameraZoom ?? adjustmentsRef.current.cameraZoom ?? 1);
             const stretch = adjustmentsRef.current.faceStretch ?? 1;
             w *= zoom;
             h *= zoom * stretch;
