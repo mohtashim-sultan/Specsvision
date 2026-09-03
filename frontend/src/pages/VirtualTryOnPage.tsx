@@ -173,10 +173,10 @@ export default function VirtualTryOnPage() {
       : products.filter((p) => p.category?.toLowerCase() === selectedCategory.toLowerCase());
   }, [products, selectedCategory]);
 
-  // Extract recommended frames for the detected face shape
+  // Extract top 3 recommended frames for the detected face shape
   const shapeRecommendedProducts = useMemo(() => {
     if (!detectedShape) return [];
-    return products.filter((p) => isBestFit(p.category, detectedShape));
+    return products.filter((p) => isBestFit(p.category, detectedShape)).slice(0, 3);
   }, [products, detectedShape]);
 
   const frameSrc = useMemo(() => {
@@ -406,9 +406,9 @@ export default function VirtualTryOnPage() {
       {/* AR Camera Section */}
       <section className="relative flex-1 min-h-0 bg-gradient-to-br from-[#faf5ff] to-[#fdf2f8] dark:from-[#020617] dark:to-[#020617] overflow-hidden flex items-center justify-center">
         {hasConsent ? (
-          <div className="absolute inset-0 w-full h-full flex items-center justify-center bg-gradient-to-br from-[#faf5ff] to-[#fdf2f8] dark:from-[#020617] dark:to-[#020617] p-1 sm:p-4">
-            {/* Portrait camera mirror — maximized full space on mobile, centered 3:4 on desktop */}
-            <div className="relative w-full h-full md:w-auto md:h-[calc(100%-2.5rem)] md:aspect-[3/4] max-w-full overflow-hidden bg-slate-950 rounded-2xl md:rounded-3xl border border-purple-500/20 shadow-[0_0_50px_rgba(15,23,42,0.3)] dark:shadow-[0_0_60px_rgba(0,0,0,0.9)]">
+          <div className="absolute inset-0 w-full h-full flex items-center justify-center bg-gradient-to-br from-[#faf5ff] to-[#fdf2f8] dark:from-[#020617] dark:to-[#020617] p-0 sm:p-4">
+            {/* Portrait camera mirror — full vertical & horizontal space on mobile, centered 3:4 on desktop */}
+            <div className="relative w-full h-full md:w-auto md:h-[calc(100%-2.5rem)] md:aspect-[3/4] max-w-full overflow-hidden bg-slate-950 rounded-none sm:rounded-3xl border-0 sm:border sm:border-purple-500/20 shadow-[0_0_50px_rgba(15,23,42,0.3)] dark:shadow-[0_0_60px_rgba(0,0,0,0.9)]">
               <TryOnViewer
                 ref={viewerRef}
                 frameSrc={frameSrc}
@@ -1268,11 +1268,11 @@ export default function VirtualTryOnPage() {
         )}
       </aside>
 
-      {/* Mobile Catalog Horizontal Carousel — Closable & Reopenable */}
+      {/* Mobile Catalog Horizontal Carousel — Compact & Closable to maximize camera height */}
       {mobileFramesOpen && (
-        <section className="md:hidden shrink-0 flex flex-col bg-white/95 dark:bg-slate-950/95 border-t border-purple-200/80 dark:border-purple-500/20 max-h-[38dvh] animate-in slide-in-from-bottom duration-300">
-          <div className="flex items-center justify-between px-4 pt-3 pb-1.5 shrink-0">
-            <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-900 dark:text-white">
+        <section className="md:hidden shrink-0 flex flex-col bg-white/95 dark:bg-slate-950/95 border-t border-purple-200/80 dark:border-purple-500/20 max-h-[22dvh] animate-in slide-in-from-bottom duration-300">
+          <div className="flex items-center justify-between px-3.5 pt-2 pb-1 shrink-0">
+            <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-900 dark:text-white">
               {selectedCategory === "All" ? "Select Frame" : selectedCategory} · {filteredProducts.length}
             </h3>
 
@@ -1281,7 +1281,7 @@ export default function VirtualTryOnPage() {
               <select
                 value={selectedCategory}
                 onChange={(e) => setSelectedCategory(e.target.value)}
-                className="tryon-chrome-select text-[11px] font-bold bg-purple-50 text-slate-800 dark:bg-slate-900 dark:text-slate-200 border border-purple-200 dark:border-white/10 rounded-lg px-2.5 py-1"
+                className="tryon-chrome-select text-[10px] font-bold bg-purple-50 text-slate-800 dark:bg-slate-900 dark:text-slate-200 border border-purple-200 dark:border-white/10 rounded-lg px-2 py-0.5"
               >
                 {categories.map((c) => (
                   <option key={c} value={c} className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">{c}</option>
@@ -1293,20 +1293,20 @@ export default function VirtualTryOnPage() {
                 type="button"
                 onClick={() => setMobileFramesOpen(false)}
                 aria-label="Close frames tray"
-                className="rounded-lg p-1 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white bg-purple-50 dark:bg-slate-900 border border-purple-200 dark:border-white/10 transition-colors cursor-pointer"
+                className="rounded-lg p-0.5 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white bg-purple-50 dark:bg-slate-900 border border-purple-200 dark:border-white/10 transition-colors cursor-pointer"
               >
-                <MaterialIcon name="close" className="!text-base" />
+                <MaterialIcon name="close" className="!text-sm" />
               </button>
             </div>
           </div>
 
-          <div className="flex gap-3 overflow-x-auto px-4 pt-1 pb-[max(1rem,env(safe-area-inset-bottom))] snap-x snap-mandatory scrollbar-none">
+          <div className="flex gap-2.5 overflow-x-auto px-3.5 pt-0.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] snap-x snap-mandatory scrollbar-none">
             {loadingCatalog ? (
-              <div className="flex items-center justify-center w-full py-6">
+              <div className="flex items-center justify-center w-full py-4">
                 <LoadingSpinner size="sm" message="Loading…" />
               </div>
             ) : filteredProducts.length === 0 ? (
-              <div className="py-6 text-center text-[10px] text-slate-500 w-full">
+              <div className="py-4 text-center text-[10px] text-slate-500 w-full">
                 No products found.
               </div>
             ) : (
@@ -1318,22 +1318,22 @@ export default function VirtualTryOnPage() {
                     key={p.id}
                     type="button"
                     onClick={() => handleSelect(p.id)}
-                    className={`relative flex w-[92px] shrink-0 snap-start flex-col rounded-2xl border p-2 text-left transition-all ${
+                    className={`relative flex w-[78px] shrink-0 snap-start flex-col rounded-xl border p-1.5 text-left transition-all ${
                       active
                         ? "border-purple-500 bg-purple-50 dark:bg-purple-500/10 ring-2 ring-purple-500/30 shadow-md"
                         : "border-purple-100 dark:border-slate-900 bg-white dark:bg-slate-900/30 shadow-sm"
                     }`}
                   >
-                    <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-slate-900 border border-purple-100 dark:border-slate-800/80">
+                    <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-slate-900 border border-purple-100 dark:border-slate-800/80">
                       <img src={displayImageUrl(p)} alt={p.name} className="h-full w-full object-cover" />
                       {active && (
-                        <span className="absolute right-1 top-1 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-purple-500 shadow-md">
-                          <MaterialIcon name="check" className="!text-[9px] text-white" />
+                        <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-purple-500 shadow-md">
+                          <MaterialIcon name="check" className="!text-[8px] text-white" />
                         </span>
                       )}
                     </div>
-                    <p className={`mt-1 truncate text-[9px] font-bold px-0.5 ${active ? "text-purple-900 dark:text-white" : "text-slate-900 dark:text-slate-200"}`}>{p.name}</p>
-                    <p className="truncate text-[8px] text-purple-600 dark:text-purple-400 font-semibold px-0.5">{formatPrice(p.price)}</p>
+                    <p className={`mt-0.5 truncate text-[8px] font-bold px-0.5 ${active ? "text-purple-900 dark:text-white" : "text-slate-900 dark:text-slate-200"}`}>{p.name}</p>
+                    <p className="truncate text-[7px] text-purple-600 dark:text-purple-400 font-semibold px-0.5">{formatPrice(p.price)}</p>
                   </button>
                 );
               })
@@ -1404,7 +1404,7 @@ export default function VirtualTryOnPage() {
               {shapeRecommendedProducts.length === 0 ? (
                 <p className="text-xs text-slate-500 py-3 text-center">No specific frames found matching this shape.</p>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   {shapeRecommendedProducts.map((p) => {
                     const isSelected = p.id === selectedId;
                     return (

@@ -911,7 +911,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             // outcome than a face cropped to twice its size.
             const isCompact = window.innerWidth < 768;
             if (isCompact) {
-              const fit = Math.min(cw / vw, ch / vh);
+              // On mobile, maximize the vertical length of the camera feed so it completely fills the height
+              const fit = Math.max(cw / vw, ch / vh);
               w = vw * fit;
               h = vh * fit;
             } else if (vAsp > cAsp) {
