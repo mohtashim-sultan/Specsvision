@@ -339,6 +339,10 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
     });
     const reportedStatusRef = useRef<TryOnStatus>("loading");
 
+    // Sync cameraZoom & faceStretch synchronously so applyFit always reads fresh values
+    adjustmentsRef.current.cameraZoom = cameraZoom ?? 1.0;
+    adjustmentsRef.current.faceStretch = faceStretch ?? 1.0;
+
     useEffect(() => {
       adjustmentsRef.current = {
         scale: scaleOffset ?? 0.90,
@@ -924,7 +928,7 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             }
 
             // Allow zooming out (< 1) down to 0.4 for wider FOV or in for tighter crop
-            const zoom = Math.max(0.4, cameraZoom ?? adjustmentsRef.current.cameraZoom ?? 1);
+            const zoom = Math.max(0.4, adjustmentsRef.current.cameraZoom ?? 1);
             const stretch = adjustmentsRef.current.faceStretch ?? 1;
             w *= zoom;
             h *= zoom * stretch;

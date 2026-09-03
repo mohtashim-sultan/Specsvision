@@ -13,25 +13,25 @@ import { motion } from 'framer-motion';
 
 const teamMembers = [
   {
-    name: 'Aisha Patel',
+    name: 'Mohtashim Sultan',
     role: 'Co-founder & CTO',
-    focus: 'AI and model training',
+    focus: 'AI and AR detection',
     image:
       'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=300&q=80',
   },
   {
-    name: 'Marco Ruiz',
+    name: 'Abdul Ahad',
     role: 'Head Designer',
     focus: 'Frame aesthetics and ergonomics',
     image:
       'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=300&q=80',
   },
   {
-    name: 'Lena Kim',
+    name: 'Moheed Khan',
     role: 'VP Customer Experience',
     focus: 'Trials and support',
     image:
-      'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=300&q=80',
+      'https://drive.google.com/file/d/1oj1evqVwp03cPBqXg4I1w6NDh-ON0Eqy/view?usp=sharingauto=format&fit=crop&w=300&q=80',
   },
 ];
 

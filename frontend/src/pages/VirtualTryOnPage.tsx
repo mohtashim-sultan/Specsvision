@@ -98,6 +98,23 @@ export default function VirtualTryOnPage() {
     localStorage.getItem("specsvision_cam_consent") === "true",
   );
   const [showZoomMenu,       setShowZoomMenu]       = useState(false);
+  const zoomMenuRef = useRef<HTMLDivElement>(null);
+
+  // Click outside to dismiss zoom menu on both desktop and mobile
+  useEffect(() => {
+    if (!showZoomMenu) return;
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
+      if (zoomMenuRef.current && !zoomMenuRef.current.contains(e.target as Node)) {
+        setShowZoomMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
+  }, [showZoomMenu]);
 
   // Adjustments & Presets States
   const [showAdjust,         setShowAdjust]         = useState(false);
@@ -1137,74 +1154,58 @@ export default function VirtualTryOnPage() {
                   <div className="h-9 w-px bg-purple-200/80 dark:bg-white/10 md:hidden" />
 
                   {/* Single Zoom Button with floating popup options directly above */}
-                  <div className="relative flex flex-col items-center">
+                  <div ref={zoomMenuRef} className="relative flex flex-col items-center">
                     {/* Popover options directly above the Zoom button */}
                     {showZoomMenu && (
-                      <>
-                        {/* Full-screen click-outside dismisser */}
-                        <div
-                          className="fixed inset-0 z-30 cursor-default pointer-events-auto"
-                          onClick={(e) => {
-                            e.stopPropagation();
+                      <div className="absolute bottom-[calc(100%+14px)] left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex items-center gap-1.5 bg-slate-950/95 dark:bg-black/95 backdrop-blur-xl rounded-full border border-purple-500/40 p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.8)] animate-in fade-in zoom-in-95 duration-150 whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateAdjustment("zoom", 0.5);
                             setShowZoomMenu(false);
                           }}
-                        />
-                        <div className="absolute bottom-[calc(100%+14px)] left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex items-center gap-1.5 bg-slate-950/95 dark:bg-black/95 backdrop-blur-xl rounded-full border border-purple-500/40 p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.8)] animate-in fade-in zoom-in-95 duration-150 whitespace-nowrap">
-                          <button
-                            type="button"
-                            onPointerDown={(e) => {
-                              e.stopPropagation();
-                              updateAdjustment("zoom", 0.5);
-                              setShowZoomMenu(false);
-                            }}
-                            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none ${
-                              adjustments.zoom <= 0.7
-                                ? "bg-purple-600 text-white shadow-md shadow-purple-500/50"
-                                : "text-slate-300 hover:text-white hover:bg-white/10"
-                            }`}
-                          >
-                            .5×
-                          </button>
-                          <button
-                            type="button"
-                            onPointerDown={(e) => {
-                              e.stopPropagation();
-                              updateAdjustment("zoom", 1.0);
-                              setShowZoomMenu(false);
-                            }}
-                            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none ${
-                              adjustments.zoom > 0.7 && adjustments.zoom <= 1.4
-                                ? "bg-purple-600 text-white shadow-md shadow-purple-500/50"
-                                : "text-slate-300 hover:text-white hover:bg-white/10"
-                            }`}
-                          >
-                            1×
-                          </button>
-                          <button
-                            type="button"
-                            onPointerDown={(e) => {
-                              e.stopPropagation();
-                              updateAdjustment("zoom", 2.0);
-                              setShowZoomMenu(false);
-                            }}
-                            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none ${
-                              adjustments.zoom > 1.4
-                                ? "bg-purple-600 text-white shadow-md shadow-purple-500/50"
-                                : "text-slate-300 hover:text-white hover:bg-white/10"
-                            }`}
-                          >
-                            2×
-                          </button>
-                        </div>
-                      </>
+                          className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none ${
+                            adjustments.zoom <= 0.7
+                              ? "bg-purple-600 text-white shadow-md shadow-purple-500/50"
+                              : "text-slate-300 hover:text-white hover:bg-white/10"
+                          }`}
+                        >
+                          .5×
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateAdjustment("zoom", 1.0);
+                            setShowZoomMenu(false);
+                          }}
+                          className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none ${
+                            adjustments.zoom > 0.7 && adjustments.zoom <= 1.4
+                              ? "bg-purple-600 text-white shadow-md shadow-purple-500/50"
+                              : "text-slate-300 hover:text-white hover:bg-white/10"
+                          }`}
+                        >
+                          1×
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateAdjustment("zoom", 2.0);
+                            setShowZoomMenu(false);
+                          }}
+                          className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none ${
+                            adjustments.zoom > 1.4
+                              ? "bg-purple-600 text-white shadow-md shadow-purple-500/50"
+                              : "text-slate-300 hover:text-white hover:bg-white/10"
+                          }`}
+                        >
+                          2×
+                        </button>
+                      </div>
                     )}
 
                     <button
                       type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowZoomMenu((prev) => !prev);
-                      }}
+                      onClick={() => setShowZoomMenu((prev) => !prev)}
                       className={`flex flex-col items-center gap-1 transition-colors active:scale-95 ${
                         showZoomMenu
                           ? "text-purple-600 dark:text-purple-300"
