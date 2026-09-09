@@ -26,14 +26,36 @@ venv/
 /backend/venv/
 /backend/__pycache__/
 /backend/**/*.pyc
-/backend/db.sqlite3
-/backend/.env
 
-# Local development artifacts (never deployed)
+# Local environment files (referenced in backend/config.py - never commit secrets)
+.env
+.env.*
+!.env.example
+*.env
+*.env.local
+/backend/.env
+/backend/.env.*
+!/backend/.env.example
+/frontend/.env
+/frontend/.env.*
+!/frontend/.env.example
+
+# Local database files (referenced in backend/config.py database_url)
 /backend/specsvision.db
+/backend/db.sqlite3
 *.sqlite3
+*.sqlite
 *.db
 
-# Local environment files -- copy .env.example and fill in per environment
-/frontend/.env
-/frontend/.env.local
+# Uploads & temporary artifacts (referenced in backend/config.py upload settings)
+/backend/uploads/temp/
+*.tmp
+*.bak
+*.part
+
+# Logs
+*.log
+
+# Local editor settings
+.vscode/
+.idea/

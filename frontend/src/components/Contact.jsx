@@ -23,13 +23,6 @@ const initialForm = {
   callback: false,
 };
 
-const tryOnProducts = [
-  { name: 'Archer', price: 'PKR 129' },
-  { name: 'Marin', price: 'PKR 149' },
-  { name: 'Lucent', price: 'PKR 169' },
-  { name: 'Harper', price: 'PKR 159' },
-];
-
 const faqs = [
   { q: 'How accurate is the AI prediction?', a: 'Our model uses over 1M try-on samples and delivers fit confidence around 95%.' },
   { q: 'Can I try frames at home?', a: 'Yes, we ship frame samples for our free trial and you can test them for 7 days.' },
@@ -106,15 +99,32 @@ export default function Contact() {
                 ))}
               </div>
             </div>
-            <div className="lg:col-span-5 rounded-xl p-2.5 overflow-hidden" style={{ background: 'linear-gradient(to br, rgba(147,51,234,0.06), rgba(236,72,153,0.06))', border: '1px solid var(--border-color)' }}>
-              <img
-                src="https://images.unsplash.com/photo-1511497584788-876760111969?auto=format&fit=crop&w=900&q=80"
-                alt="Eyewear assistance"
-                className="w-full h-36 sm:h-44 object-cover rounded-lg"
-              />
-              <p className="mt-2 text-[11px] text-center" style={{ color: 'var(--text-muted)' }}>
-                Expert help available - average response under 2 hours
-              </p>
+            <div className="lg:col-span-5 rounded-xl p-5 flex flex-col justify-between" style={{ background: 'linear-gradient(to br, rgba(147,51,234,0.08), rgba(236,72,153,0.08))', border: '1px solid var(--border-color)' }}>
+              <div>
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-purple-600/10 text-purple-600 dark:text-purple-300">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <span className="text-xs font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">
+                    SpecsVision Care
+                  </span>
+                </div>
+                <h3 className="mt-3 text-base font-bold" style={{ color: 'var(--text-primary)' }}>
+                  Optical Fit &amp; Prescription Guidance
+                </h3>
+                <p className="mt-1.5 text-xs sm:text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                  Need help choosing frame dimensions, PD (Pupillary Distance), or face-shape compatibility? Our optical specialists review your requests and recommend the best fit.
+                </p>
+              </div>
+              <div className="mt-4 pt-3 border-t flex items-center justify-between text-xs" style={{ borderColor: 'var(--border-color)' }}>
+                <span className="flex items-center gap-1.5 font-medium" style={{ color: 'var(--text-accent)' }}>
+                  <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                  Avg. reply under 2 hours
+                </span>
+                <span className="font-semibold text-[11px] px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(147,51,234,0.1)', color: 'var(--text-accent)' }}>
+                  7-Day Trial Support
+                </span>
+              </div>
             </div>
           </div>
         </motion.section>
@@ -225,51 +235,6 @@ export default function Contact() {
 
           {/* Sidebar */}
           <aside className="lg:col-span-5 space-y-4 self-start">
-            {/* Try-On Preview */}
-            <motion.article
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="rounded-2xl p-4 shadow-sm"
-              style={{ backgroundColor: 'var(--surface-bg)', border: '1px solid var(--border-color)' }}
-            >
-              <div className="flex justify-between items-center">
-                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Try-On Preview</h3>
-                <p className="text-xs font-medium" style={{ color: 'var(--text-accent)' }}>Best Match</p>
-              </div>
-              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                Live webcam - adjust lighting and angle for the best match.
-              </p>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                {[
-                  { src: 'https://images.unsplash.com/photo-1580910051074-3eb694886505?auto=format&fit=crop&w=500&q=80', alt: 'Try on sample one' },
-                  { src: 'https://images.unsplash.com/photo-1617727553252-65863c156eb0?auto=format&fit=crop&w=500&q=80', alt: 'Try on sample two' },
-                ].map(img => (
-                  <img key={img.alt} src={img.src} alt={img.alt} className="w-full h-32 object-cover rounded-lg" style={{ border: '1px solid var(--border-color)' }} />
-                ))}
-              </div>
-              <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {tryOnProducts.map((item) => (
-                  <div key={item.name} className="rounded-lg p-2 min-h-[84px] flex flex-col" style={{ backgroundColor: 'rgba(147,51,234,0.04)', border: '1px solid var(--border-color)' }}>
-                    <p className="text-[11px] font-semibold" style={{ color: 'var(--text-primary)' }}>{item.name}</p>
-                    <p className="text-[11px] mt-1" style={{ color: 'var(--text-accent)' }}>{item.price}</p>
-                    <button className="mt-auto rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ backgroundColor: 'var(--surface-bg)', border: '1px solid var(--border-color)', color: 'var(--text-accent)' }}>
-                      Try
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3">
-                <Link
-                  to="/try-on"
-                  className="w-full inline-flex justify-center items-center gap-1 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 px-3 py-2 text-xs font-semibold text-white shadow-md"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  Live
-                </Link>
-              </div>
-            </motion.article>
-
             {/* FAQ */}
             <motion.article
               initial={{ opacity: 0, y: 20 }}

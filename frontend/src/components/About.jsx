@@ -1,7 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Sparkles,
   Wand2,
   MapPin,
   Phone,
@@ -15,23 +14,26 @@ const teamMembers = [
   {
     name: 'Mohtashim Sultan',
     role: 'Co-founder & CTO',
-    focus: 'AI and AR detection',
-    image:
-      'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=300&q=80',
+    focus: 'AI & 3D AR Vision',
+    initials: 'MS',
+    description:
+      'Leads the engineering behind our real-time 3D facial tracking, neural face-shape classification, and WebGL virtual try-on engine.',
   },
   {
     name: 'Abdul Ahad',
     role: 'Head Designer',
-    focus: 'Frame aesthetics and ergonomics',
-    image:
-      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=300&q=80',
+    focus: 'Frame Aesthetics & Ergonomics',
+    initials: 'AA',
+    description:
+      'Directs eyewear aesthetic design, 3D CAD modeling, and ergonomic temple curvature for lightweight everyday comfort.',
   },
   {
     name: 'Moheed Khan',
     role: 'VP Customer Experience',
-    focus: 'Trials and support',
-    image:
-      'https://drive.google.com/file/d/1oj1evqVwp03cPBqXg4I1w6NDh-ON0Eqy/view?usp=sharingauto=format&fit=crop&w=300&q=80',
+    focus: 'Trials & Client Support',
+    initials: 'MK',
+    description:
+      'Oversees customer success, 7-day home trial logistics, and personalized optical styling support.',
   },
 ];
 
@@ -40,8 +42,6 @@ const milestones = [
   { title: '95% Fit Accuracy', description: 'Industry-leading facial fit predictions.' },
   { title: 'Global Shipping', description: 'Ships to 40+ countries with live tracking.' },
 ];
-
-const featuredFrames = ['Oval Classic', 'Aviator Lite', 'Willow Round', 'Vector Slim'];
 
 export default function About() {
   return (
@@ -83,18 +83,31 @@ export default function About() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.1 + i * 0.1 }}
-                  className="rounded-2xl p-4 shadow-sm min-h-[172px] flex flex-col text-center"
+                  className="rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col justify-between"
                   style={{ backgroundColor: 'var(--surface-bg)', border: '1px solid var(--border-color)' }}
                 >
-                  <img
-                    src={member.image}
-                    alt={member.name}
-                    className="w-16 h-16 rounded-full object-cover mx-auto"
-                    style={{ border: '2px solid var(--border-color)' }}
-                  />
-                  <h2 className="mt-3 text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{member.name}</h2>
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-accent)' }}>{member.role}</p>
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{member.focus}</p>
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-12 h-12 rounded-full flex items-center justify-center font-bold text-sm sm:text-base text-purple-600 dark:text-purple-300 shadow-inner flex-shrink-0"
+                        style={{ background: 'linear-gradient(135deg, rgba(147,51,234,0.15), rgba(236,72,153,0.15))', border: '1.5px solid var(--border-color)' }}
+                      >
+                        {member.initials}
+                      </div>
+                      <div className="min-w-0">
+                        <h2 className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{member.name}</h2>
+                        <p className="text-xs font-medium" style={{ color: 'var(--text-accent)' }}>{member.role}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
+                      <span className="inline-block text-[11px] font-medium px-2 py-0.5 rounded-md mb-2" style={{ backgroundColor: 'rgba(147,51,234,0.08)', color: 'var(--text-accent)' }}>
+                        {member.focus}
+                      </span>
+                      <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                        {member.description}
+                      </p>
+                    </div>
+                  </div>
                 </motion.article>
               ))}
             </div>
@@ -163,7 +176,7 @@ export default function About() {
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link
                   to="/contact"
-                  className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-500/25 hover:shadow-xl transition min-h-[42px]"
+                  className="inline-flex items-center justify-center rounded-xl bg-pink-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-500/25 hover:shadow-xl transition min-h-[42px]"
                 >
                   Open Contact Form
                 </Link>
@@ -179,54 +192,6 @@ export default function About() {
           </section>
 
           <aside className="lg:col-span-5 space-y-5">
-            {/* Try-On Preview */}
-            <motion.article
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="rounded-2xl p-4 sm:p-5 shadow-sm"
-              style={{ backgroundColor: 'var(--surface-bg)', border: '1px solid var(--border-color)' }}
-            >
-              <h2 className="text-lg font-semibold" style={{ color: 'var(--text-accent)' }}>Virtual Try-On</h2>
-              <p className="mt-1 text-xs sm:text-sm" style={{ color: 'var(--text-secondary)' }}>
-                Try frames on live through your webcam.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {['Width: Natural', 'Front'].map(tag => (
-                  <span key={tag} className="rounded-full px-3 py-1.5 text-xs" style={{ backgroundColor: 'rgba(147,51,234,0.06)', color: 'var(--text-accent)', border: '1px solid var(--border-color)' }}>
-                    {tag}
-                  </span>
-                ))}
-              </div>
-              <div className="mt-3 rounded-xl p-2 overflow-hidden" style={{ background: 'linear-gradient(to bottom, rgba(147,51,234,0.06), rgba(236,72,153,0.06))', border: '1px solid var(--border-color)' }}>
-                <img
-                  src="https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=600&q=80"
-                  alt="Virtual try-on preview"
-                  className="w-full h-56 object-cover rounded-lg"
-                />
-              </div>
-              <p className="mt-3 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Featured Frames</p>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                {featuredFrames.map((frame) => (
-                  <div key={frame} className="rounded-lg px-2.5 py-2 text-xs text-center" style={{ backgroundColor: 'rgba(147,51,234,0.04)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)' }}>
-                    {frame}
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4">
-                <Link
-                  to="/try-on"
-                  className="inline-flex w-full items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 px-4 py-2 text-xs font-semibold text-white min-h-[38px] shadow-md"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  Try On Live
-                </Link>
-              </div>
-              <p className="mt-3 text-xs" style={{ color: 'var(--text-muted)' }}>
-                Tip: Use bright natural lighting for the most realistic lens and frame match.
-              </p>
-            </motion.article>
-
             {/* Store & Support */}
             <motion.article
               initial={{ opacity: 0, y: 20 }}
