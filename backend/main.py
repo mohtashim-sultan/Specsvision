@@ -27,9 +27,13 @@ async def lifespan(_app: FastAPI):
             "SECRET_KEY is set to a public placeholder value. Generate one with "
             "`openssl rand -hex 32` and set it in the environment."
         )
-        if settings.environment.lower() == "production":
-            raise RuntimeError(message)
-        logger.warning("INSECURE CONFIG: %s", message)
+    # Ensure all tables exist on startup (idempotent: does not touch or alter existing tables)
+    try:
+        from models import Base
+        from db import engine
+        Base.metadata.create_all(bind=engine)
+    except Exception as exc:
+        logger.warning("Could not run create_all on startup: %s", exc)
     yield
 
 

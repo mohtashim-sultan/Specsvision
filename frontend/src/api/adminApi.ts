@@ -128,9 +128,20 @@ export async function fetchAdminOrders(params: {
   return apiRequest<AdminOrderList>(`/api/admin/orders${q ? `?${q}` : ""}`);
 }
 
-export async function patchAdminOrderStatus(orderId: number, status: string): Promise<AdminOrderDetail> {
+export async function fetchAdminOrderDetail(orderId: number): Promise<AdminOrderDetail> {
+  return apiRequest<AdminOrderDetail>(`/api/admin/orders/${orderId}`);
+}
+
+export async function patchAdminOrderStatus(
+  orderId: number,
+  status: string,
+  trackingNumber?: string | null,
+): Promise<AdminOrderDetail> {
+  const body: { status: string; tracking_number?: string | null } = { status };
+  if (trackingNumber !== undefined) body.tracking_number = trackingNumber;
   return apiRequest<AdminOrderDetail>(`/api/admin/orders/${orderId}`, {
     method: "PATCH",
-    body: JSON.stringify({ status }),
+    body: JSON.stringify(body),
   });
 }
+

@@ -111,6 +111,18 @@ export type AdminStats = {
   total_users: number;
 };
 
+export type OrderItemDetail = {
+  product_id?: number | null;
+  product_name: string;
+  product_sku?: string | null;
+  product_image?: string | null;
+  current_stock?: number | null;
+  quantity: number;
+  unit_price: string;
+  line_total: string;
+  color?: string | null;
+};
+
 export type AdminOrderSummary = {
   id: number;
   status: string;
@@ -118,6 +130,7 @@ export type AdminOrderSummary = {
   created_at: string;
   user_email: string;
   user_full_name: string | null;
+  items?: OrderItemDetail[];
 };
 
 export type AdminOrderList = {
@@ -128,17 +141,25 @@ export type AdminOrderList = {
 export type AdminOrderDetail = {
   id: number;
   status: string;
+  subtotal?: string | null;
+  tax?: string | null;
+  shipping_fee?: string | null;
+  discount?: string | null;
+  coupon_code?: string | null;
   total: string;
   created_at: string;
   payment_reference: string | null;
+  tracking_number?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  ship_full_name?: string | null;
+  ship_address?: string | null;
+  ship_city?: string | null;
+  ship_state?: string | null;
+  ship_zip?: string | null;
   user_email: string;
   user_full_name: string | null;
-  items: {
-    product_name: string;
-    quantity: number;
-    unit_price: string;
-    line_total: string;
-  }[];
+  items: OrderItemDetail[];
 };
 
 export type CartLine = {

@@ -42,7 +42,11 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 5 * 1024 * 1024  # 5 MB — images
     max_model_upload_bytes: int = 32 * 1024 * 1024  # 32 MB — .glb / .gltf
 
-    # Email (Resend API) — used for order confirmation.
+    # Email (SMTP e.g. Gmail or Resend API) — used for order confirmation & password reset.
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
     resend_api_key: str = ""
     email_from: str = "SpecsVision <onboarding@resend.dev>"
 

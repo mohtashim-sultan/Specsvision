@@ -47,56 +47,66 @@ function CheckoutFormContent({
   const taxable = subtotal - discount;
   const tax = taxable * TAX_RATE;
   const shipping = subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE;
+  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'card'>('cod');
   const total = taxable + tax + shipping;
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!stripe || !elements) {
-      toast.error('Stripe is initializing. Please wait a moment.');
-      return;
-    }
-    const cardElement = elements.getElement(CardElement);
-    if (!cardElement) {
-      toast.error('Card details incomplete.');
-      return;
-    }
 
     setPlacingOrder(true);
     try {
-      // 1. Create PaymentIntent on backend
-      const intentRes = await createPaymentIntentRequest(couponCode.trim() || null);
+      let finalPaymentIntentId = `cod_${Date.now()}`;
 
-      // 2. Confirm card payment with Stripe
-      const result = await stripe.confirmCardPayment(intentRes.client_secret, {
-        payment_method: {
-          card: cardElement,
-          billing_details: {
-            name: fullName,
-            email: email,
-            phone: phone,
-            address: {
-              line1: address,
-              city: city,
-              state: state,
-              postal_code: zip,
+      if (paymentMethod === 'card') {
+        if (!stripe || !elements) {
+          toast.error('Stripe is initializing. Please wait a moment.');
+          setPlacingOrder(false);
+          return;
+        }
+        const cardElement = elements.getElement(CardElement);
+        if (!cardElement) {
+          toast.error('Card details incomplete.');
+          setPlacingOrder(false);
+          return;
+        }
+
+        // 1. Create PaymentIntent on backend
+        const intentRes = await createPaymentIntentRequest(couponCode.trim() || null);
+
+        // 2. Confirm card payment with Stripe
+        const result = await stripe.confirmCardPayment(intentRes.client_secret, {
+          payment_method: {
+            card: cardElement,
+            billing_details: {
+              name: fullName,
+              email: email,
+              phone: phone,
+              address: {
+                line1: address,
+                city: city,
+                state: state,
+                postal_code: zip,
+              },
             },
           },
-        },
-      });
+        });
 
-      if (result.error) {
-        toast.error(result.error.message || 'Payment processing failed');
-        setPlacingOrder(false);
-        return;
+        if (result.error) {
+          toast.error(result.error.message || 'Payment processing failed');
+          setPlacingOrder(false);
+          return;
+        }
+
+        if (result.paymentIntent?.status !== 'succeeded') {
+          toast.error(`Payment not completed. Status: ${result.paymentIntent?.status}`);
+          setPlacingOrder(false);
+          return;
+        }
+
+        finalPaymentIntentId = result.paymentIntent.id;
       }
 
-      if (result.paymentIntent?.status !== 'succeeded') {
-        toast.error(`Payment not completed. Status: ${result.paymentIntent?.status}`);
-        setPlacingOrder(false);
-        return;
-      }
-
-      // 3. Complete checkout on backend with payment_intent_id
+      // Complete checkout on backend
       const checkoutRes = await checkoutCart({
         shipping: {
           full_name: fullName,
@@ -107,11 +117,11 @@ function CheckoutFormContent({
           email,
           phone,
         },
-        payment_intent_id: result.paymentIntent.id,
+        payment_intent_id: finalPaymentIntentId,
         coupon_code: couponCode.trim() ? couponCode.trim() : null,
       });
 
-      toast.success('Payment approved! Order placed successfully.');
+      toast.success(paymentMethod === 'cod' ? 'Order placed! Pay on delivery.' : 'Payment approved! Order placed.');
       await refreshCart();
       navigate(`/order-success/${checkoutRes.order_id}`);
     } catch (err: any) {
@@ -270,45 +280,88 @@ function CheckoutFormContent({
           </div>
         </div>
 
-        {/* Real Stripe Payment */}
+        {/* Payment Method Selector */}
         <div className="space-y-4 pt-4" style={{ borderTop: '1px solid var(--border-color)' }}>
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: 'var(--text-accent)' }}>
               <CreditCard className="w-4 h-4" />
-              Secure Payment (Stripe)
+              Payment Method
             </h3>
             <span className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full flex items-center gap-1 bg-purple-500/10 text-purple-400 border border-purple-500/20">
-              <Lock className="w-3 h-3" /> Encrypted 256-bit
+              <Lock className="w-3 h-3" /> Secure Checkout
             </span>
           </div>
-          <div
-            className="p-4 rounded-2xl space-y-3"
-            style={{ backgroundColor: 'var(--surface-bg-secondary)', border: '1px solid var(--border-color)' }}
-          >
-            <label className="block text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
-              Card Details (Card Number, Expiry, CVC)
-            </label>
-            <div className="p-3.5 rounded-xl border border-purple-500/30 bg-slate-900/60 focus-within:border-purple-500 transition-all">
-              <CardElement
-                options={{
-                  style: {
-                    base: {
-                      fontSize: '15px',
-                      color: '#ffffff',
-                      '::placeholder': { color: '#94a3b8' },
-                      iconColor: '#a855f7',
-                    },
-                    invalid: {
-                      color: '#ef4444',
-                    },
-                  },
-                }}
-              />
-            </div>
-            <p className="text-[11px] text-slate-400">
-              Use Stripe test card <code className="bg-slate-800 px-1.5 py-0.5 rounded text-purple-300">4242 4242 4242 4242</code> with any future date.
-            </p>
+
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setPaymentMethod('cod')}
+              className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                paymentMethod === 'cod'
+                  ? 'border-purple-600 bg-purple-50/50 dark:bg-purple-950/30 ring-2 ring-purple-500/20'
+                  : 'border-slate-200 dark:border-slate-800 hover:border-purple-300'
+              }`}
+            >
+              <div className="text-xs font-bold text-slate-900 dark:text-white">Cash on Delivery</div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Pay when frames arrive</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPaymentMethod('card')}
+              className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                paymentMethod === 'card'
+                  ? 'border-purple-600 bg-purple-50/50 dark:bg-purple-950/30 ring-2 ring-purple-500/20'
+                  : 'border-slate-200 dark:border-slate-800 hover:border-purple-300'
+              }`}
+            >
+              <div className="text-xs font-bold text-slate-900 dark:text-white">Debit / Credit Card</div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Instant Stripe payment</div>
+            </button>
           </div>
+
+          {paymentMethod === 'card' ? (
+            <div
+              className="p-4 rounded-2xl space-y-3"
+              style={{ backgroundColor: 'var(--surface-bg-secondary)', border: '1px solid var(--border-color)' }}
+            >
+              <label className="block text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+                Card Details (Card Number, Expiry, CVC)
+              </label>
+              <div className="p-3.5 rounded-xl border border-purple-500/30 bg-slate-900/60 focus-within:border-purple-500 transition-all">
+                <CardElement
+                  options={{
+                    style: {
+                      base: {
+                        fontSize: '15px',
+                        color: '#ffffff',
+                        '::placeholder': { color: '#94a3b8' },
+                        iconColor: '#a855f7',
+                      },
+                      invalid: {
+                        color: '#ef4444',
+                      },
+                    },
+                  }}
+                />
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Use Stripe test card <code className="bg-slate-800 px-1.5 py-0.5 rounded text-purple-300">4242 4242 4242 4242</code> with any future date.
+              </p>
+            </div>
+          ) : (
+            <div
+              className="p-4 rounded-xl flex items-center gap-3 text-xs"
+              style={{ backgroundColor: 'var(--surface-bg-secondary)', border: '1px solid var(--border-color)' }}
+            >
+              <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-600 flex items-center justify-center shrink-0 font-bold">
+                ✓
+              </div>
+              <div>
+                <span className="font-bold block" style={{ color: 'var(--text-primary)' }}>No advance payment required</span>
+                <span style={{ color: 'var(--text-muted)' }}>Pay in cash upon delivery to your doorstep.</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Coupon */}
@@ -336,14 +389,16 @@ function CheckoutFormContent({
 
         <button
           type="submit"
-          disabled={placingOrder || !stripe}
+          disabled={placingOrder || (paymentMethod === 'card' && !stripe)}
           className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white py-3.5 px-6 rounded-xl font-bold hover:shadow-xl hover:shadow-purple-500/25 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 text-base cursor-pointer"
         >
           {placingOrder ? (
             <>
               <RefreshCw className="w-5 h-5 animate-spin" />
-              Processing Payment...
+              Processing Order...
             </>
+          ) : paymentMethod === 'cod' ? (
+            `Place Order (Pay PKR ${total.toLocaleString()} on Delivery)`
           ) : (
             `Pay PKR ${total.toLocaleString()} & Complete Order`
           )}

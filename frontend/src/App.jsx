@@ -33,6 +33,8 @@ import CheckoutPage from './pages/CheckoutPage';
 import OrderSuccessPage from './pages/OrderSuccessPage';
 import WishlistPage from './pages/WishlistPage';
 import ComparePage from './pages/ComparePage';
+import ForgotPassword from './components/ForgotPassword';
+import ProtectedRoute from './components/common/ProtectedRoute';
 
 
 function AppContent() {
@@ -56,19 +58,20 @@ function AppContent() {
         <Route path="/shop/:productId" element={<ProductDetailPage />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/cart" element={<Cart />} />
-        <Route path="/try-on" element={<VirtualTryOnPage />} />
-        <Route path="/try-on/:productId" element={<VirtualTryOnPage />} />
+        <Route path="/try-on" element={<ProtectedRoute><VirtualTryOnPage /></ProtectedRoute>} />
+        <Route path="/try-on/:productId" element={<ProtectedRoute><VirtualTryOnPage /></ProtectedRoute>} />
         <Route path="/about" element={<About />} />
         <Route path="/contact" element={<Contact />} />
-        <Route path="/profile" element={<UserProfilePage />} />
-        <Route path="/wishlist" element={<WishlistPage />} />
+        <Route path="/profile" element={<ProtectedRoute><UserProfilePage /></ProtectedRoute>} />
+        <Route path="/wishlist" element={<ProtectedRoute><WishlistPage /></ProtectedRoute>} />
         <Route path="/compare" element={<ComparePage />} />
-        <Route path="/checkout" element={<CheckoutPage />} />
-        <Route path="/order-success/:orderId" element={<OrderSuccessPage />} />
+        <Route path="/checkout" element={<ProtectedRoute><CheckoutPage /></ProtectedRoute>} />
+        <Route path="/order-success/:orderId" element={<ProtectedRoute><OrderSuccessPage /></ProtectedRoute>} />
 
         {/* Admin Portal */}
-        <Route path="/admin" element={<AdminLayout />}>
+        <Route path="/admin" element={<ProtectedRoute adminOnly><AdminLayout /></ProtectedRoute>}>
           <Route index element={<AdminDashboardPage />} />
           <Route path="products" element={<AdminProductsPage />} />
           <Route path="products/:productId" element={<AdminProductEditPage />} />

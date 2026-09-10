@@ -122,6 +122,7 @@ class OrderItem(Base):
     color: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     order: Mapped[Order] = relationship(back_populates="items")
+    product: Mapped[Product | None] = relationship()
 
 
 class Review(Base):

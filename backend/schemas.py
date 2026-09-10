@@ -24,6 +24,16 @@ class UserLogin(BaseModel):
     password: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    otp: str = Field(min_length=6, max_length=6)
+    new_password: str = Field(min_length=8)
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -182,11 +192,16 @@ class CheckoutResponse(BaseModel):
 
 
 class OrderItemOut(BaseModel):
+    product_id: int | None = None
     product_name: str
+    product_sku: str | None = None
+    product_image: str | None = None
+    current_stock: int | None = None
     quantity: int
     unit_price: Decimal
     line_total: Decimal
     color: str | None = None
+
 
 
 class OrderOut(BaseModel):
@@ -278,6 +293,7 @@ class AdminOrderSummaryOut(BaseModel):
     created_at: datetime
     user_email: str
     user_full_name: str | None
+    items: list[OrderItemOut] = []
 
 
 class AdminOrderDetailOut(BaseModel):
