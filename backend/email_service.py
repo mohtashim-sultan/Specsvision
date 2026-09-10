@@ -27,57 +27,81 @@ from config import settings
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import parseaddr
 import requests
 
 
 # ── Delivery helpers ──────────────────────────────────────────────────────────
 
+def _send_brevo(to: str, subject: str, html: str) -> None:
+    """Send an email via the Brevo (Sendinblue) HTTP API — port 443 HTTPS, works on Render."""
+    name, addr = parseaddr(settings.email_from)
+    sender_email = addr
+    if not sender_email or "resend.dev" in sender_email:
+        sender_email = settings.smtp_user or sender_email or "no-reply@specsvision.com"
+    sender_name = name or "SpecsVision"
+
+    payload = {
+        "sender": {
+            "name": sender_name,
+            "email": sender_email,
+        },
+        "to": [{"email": to}],
+        "subject": subject,
+        "htmlContent": html,
+    }
+    resp = requests.post(
+        "https://api.brevo.com/v3/smtp/email",
+        json=payload,
+        headers={
+            "api-key": settings.brevo_api_key,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        timeout=10,
+    )
+    if resp.status_code in (200, 201):
+        msg_id = resp.json().get("messageId", "ok")
+        print(f"[email] Brevo email sent successfully to {to}: {msg_id}")
+    else:
+        print(f"[email] Brevo API error ({resp.status_code}): {resp.text}", file=sys.stderr)
+
+
 def _send_smtp(to: str, subject: str, html: str) -> None:
-    """Send an email via standard SMTP (e.g. Gmail)."""
+    """Send an email via standard SMTP (supports STARTTLS on 587/2525 and SSL on 465)."""
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = settings.email_from or settings.smtp_user
     msg["To"] = to
     msg.attach(MIMEText(html, "html"))
 
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as server:
-        server.starttls()
-        server.login(settings.smtp_user, settings.smtp_password)
-        server.sendmail(settings.smtp_user, [to], msg.as_string())
+    if settings.smtp_port == 465:
+        with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=15) as server:
+            server.login(settings.smtp_user, settings.smtp_password)
+            server.sendmail(settings.smtp_user, [to], msg.as_string())
+    else:
+        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as server:
+            server.starttls()
+            server.login(settings.smtp_user, settings.smtp_password)
+            server.sendmail(settings.smtp_user, [to], msg.as_string())
     print(f"[email] SMTP email sent successfully to {to}")
 
 
-def _send_resend(to: str, subject: str, html: str) -> None:
-    """Send an email via the Resend API."""
-    payload = {
-        "from": settings.email_from,
-        "to": [to],
-        "subject": subject,
-        "html": html,
-    }
-    resp = requests.post(
-        "https://api.resend.com/emails",
-        json=payload,
-        headers={
-            "Authorization": f"Bearer {settings.resend_api_key}",
-            "Content-Type": "application/json",
-        },
-        timeout=10,
-    )
-    if resp.status_code in (200, 201):
-        print(f"[email] Resend email sent successfully to {to}: {resp.json().get('id')}")
-    else:
-        print(f"[email] Resend API error ({resp.status_code}): {resp.text}", file=sys.stderr)
-
-
 def _deliver_email(to: str, subject: str, html: str) -> None:
-    """Attempt email delivery via SMTP first, then Resend, or fallback to console."""
+    """Attempt email delivery: SMTP first if configured, then HTTP fallbacks, or console."""
     if settings.smtp_user and settings.smtp_password:
         try:
             _send_smtp(to, subject, html)
             return
         except Exception as exc:
             print(f"[email] SMTP failed: {exc}", file=sys.stderr)
+
+    if settings.brevo_api_key:
+        try:
+            _send_brevo(to, subject, html)
+            return
+        except Exception as exc:
+            print(f"[email] Brevo failed: {exc}", file=sys.stderr)
 
     if settings.resend_api_key:
         try:
@@ -86,7 +110,7 @@ def _deliver_email(to: str, subject: str, html: str) -> None:
         except Exception as exc:
             print(f"[email] Resend failed: {exc}", file=sys.stderr)
 
-    print(f"[email] No active SMTP/Resend provider configured. Email destined for {to} logged.", file=sys.stderr)
+    print(f"[email] No active Email provider (SMTP/Brevo/Resend) configured. Email destined for {to} logged.", file=sys.stderr)
 
 
 def _send_async(to: str, subject: str, html: str) -> None:
