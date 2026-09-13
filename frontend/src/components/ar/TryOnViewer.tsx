@@ -21,7 +21,7 @@ import {
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-export type TryOnStatus = "loading" | "ready" | "tracking" | "no-face" | "error";
+export type TryOnStatus = "loading" | "ready" | "tracking" | "no-face" | "out-of-frame" | "error";
 
 export type ScanState = "idle" | "aligning" | "scanning" | "completed" | "failed";
 
@@ -94,29 +94,18 @@ const AR = {
   TEMPLE_MIN: 0.3,
   TEMPLE_MAX: 3.2,
   // How far outside the head the temple arms sit, in world cm. Enough to clear the skin
-  // plus landmark jitter without the arms visibly standing off the head. Raising this to
-  // ~1.5 would also clear thick hair, at the cost of arms floating on a short-haired user
-  // — there is no hair geometry to measure, so it is one constant either way.
-  TEMPLE_CLEARANCE: 0.6,
+  // plus landmark jitter without the arms visibly standing off the head.
+  // 0.3 cm (3mm) provides a natural snug fit along the temples.
+  TEMPLE_CLEARANCE: 0.3,
   // Maximum outward angle at the hinge, in degrees. Real eyewear temples splay roughly
-  // 5-15 degrees, so this stays inside what a frame is actually built with.
-  TEMPLE_SPLAY_MAX_DEG: 16,
+  // 5-8 degrees, keeping the arms hugging the temples without flaring open.
+  TEMPLE_SPLAY_MAX_DEG: 8.0,
   // Depth over which the rotation eases in, as a fraction of the model. Kept short: it
   // is the hinge, not a bend. Long enough only to avoid tearing a mesh whose triangles
   // straddle the joint.
   TEMPLE_HINGE_FILLET: 0.05,
-  // Strength of the outward flare, 0 = off.
-  //
-  // An arm at its modelled width runs inside the skull for its last 40% and is correctly
-  // hidden there, which reads as the temple being too short. This angles it outward so
-  // more of its length stays clear of the head.
-  //
-  // It is a RIGID ROTATION about the hinge, not a per-vertex displacement. An earlier
-  // version pushed each vertex sideways by an amount that varied along the arm, which
-  // bent it -- the frame looked broken rather than worn. Rotating the whole arm about
-  // its joint preserves every vertex's position relative to every other, so a straight
-  // temple stays straight and only its direction changes. That is what a hinge does.
-  TEMPLE_SPLAY_STRENGTH: 0,
+  // Strength of the outward flare (0..1).
+  TEMPLE_SPLAY_STRENGTH: 0.75,
   // Cap on outward bend, as a fraction of the model's own half-width, so a bad head
   // measurement can never splay the arms into a wishbone.
   TEMPLE_SPLAY_MAX: 0.45,
@@ -135,13 +124,8 @@ const AR = {
   TEMPLE_AIM_MAX: 0,
   // Arms are solved to reach the ear, then extended by this factor so they carry past it
   // and hook down behind, as real temples do, instead of stopping level with it.
-  //
-  // Capped at 1.05 rather than more: MindAR's face mesh ends at the ears, so there is no
-  // occluder behind them. An arm extended much further re-emerges past the mesh as a
-  // floating fragment behind the head, disconnected from the part the skull is hiding.
-  // With the flare off the arm is hidden from ~60% of its length anyway, so apparent
-  // length now comes from occluding it correctly rather than from stretching it.
-  TEMPLE_REACH_K: 1.05,
+  // Set to 1.02 so temples snug the ears without overshooting into empty air.
+  TEMPLE_REACH_K: 1.02,
   SMOOTH: 30,        // general-purpose smoothing rate for derived quantities
 
   // Placement smoothing rates, as exponential time constants (lag = 1000/rate ms).
@@ -168,15 +152,15 @@ const AR = {
   //
   // MIN applies at rest, where nothing but noise is moving. SLOPE converts measured
   // speed into extra rate. MAX caps it so a tracking glitch cannot make the frame snap.
-  ADAPT_POS_MIN: 12.0,     // Butter-smooth base position rate
-  ADAPT_POS_SLOPE: 1.2,    // Gentle acceleration on movement
-  ADAPT_ROT_MIN: 10.0,     // Silky head-turn rotation rate (eliminates yaw/pitch vibration)
-  ADAPT_ROT_SLOPE: 6.0,    // Smoothly tracks head turns without snappy oscillation
-  ADAPT_SCALE_MIN: 6.0,    // Rock-solid scale damping
+  ADAPT_POS_MIN: 18.0,     // Snappy base position tracking (prevents lag on face tilts)
+  ADAPT_POS_SLOPE: 1.5,    // Gentle acceleration on movement
+  ADAPT_ROT_MIN: 16.0,     // Tight head-turn rotation rate (sticks cleanly on tilt)
+  ADAPT_ROT_SLOPE: 8.0,    // Smoothly tracks head turns without angular lag
+  ADAPT_SCALE_MIN: 8.0,    // Stable scale damping
   ADAPT_SCALE_SLOPE: 10.0, // Scale follows natural depth changes
-  ADAPT_POS_MAX: 24.0,     // Upper bound prevents sudden vibration snaps
-  ADAPT_ROT_MAX: 22.0,     // Upper bound prevents angular jitter during head turns
-  ADAPT_SCALE_MAX: 16.0,   // Upper bound for scale
+  ADAPT_POS_MAX: 30.0,     // Upper bound prevents sudden vibration snaps
+  ADAPT_ROT_MAX: 28.0,     // Upper bound prevents angular jitter during head turns
+  ADAPT_SCALE_MAX: 18.0,   // Upper bound for scale
   ADAPT_SPEED_SMOOTH: 8.0, // Stable velocity smoothing
   SMOOTH_SLIDER: 40, // while a slider is being dragged, respond immediately
   // cos of the maximum head turn whose landmarks are trusted for face-shape sampling.
@@ -234,6 +218,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
     const scanSamplesRef = useRef<DetailedRatios[]>([]);
     const scanAlignFramesRef = useRef<number>(0);
     const lastResultRef = useRef<FaceShapeResult | null>(null);
+    /** Total number of faces detected in the camera stream (for multi-face rejection). */
+    const detectedFaceCountRef = useRef<number>(0);
     /** Ref tracking previous adjustments state to detect user slider interactions. */
     const lastAdjRef = useRef<any>(null);
     /** Previous frame's TARGET pose, for measuring how fast the head is really moving. */
@@ -285,6 +271,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
       parts: [], halfWidth: 1, hingeZ: 0, hingeX: 0, tipY: 0, armReach: 1,
       appliedAngle: -1e9, appliedX: -1e9, appliedY: -1e9,
     });
+    /** Mesh occluder for the back of the head/skull, preventing temple tips from floating. */
+    const headOccluderRef = useRef<THREE.Mesh | null>(null);
     /** Real-time frameSrc ref to prevent closure race condition on initial route mount. */
     const frameSrcRef = useRef<string | null | undefined>(frameSrc);
     const loadIdRef = useRef(0);
@@ -338,6 +326,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
       rotationZ: 0.0,
     });
     const reportedStatusRef = useRef<TryOnStatus>("loading");
+    /** Ref tracking whether the user's face is currently cut off / outside the screen box */
+    const isFaceCutRef = useRef(false);
 
     // Sync cameraZoom & faceStretch synchronously so applyFit always reads fresh values
     adjustmentsRef.current.cameraZoom = cameraZoom ?? 1.0;
@@ -1079,6 +1069,21 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
           faceMesh.visible = true;
           mindarInstance.scene.add(faceMesh);
 
+          // Head / skull depth occluder — prevents temple arm tips behind the ears
+          // from rendering in empty air beyond the edge of MindAR's face mesh.
+          const headOccluderGeom = new THREE.CylinderGeometry(0.85, 0.85, 2.0, 24);
+          headOccluderGeom.translate(0, -0.1, -1.1);
+          const headOccluderMat = new THREE.MeshBasicMaterial({
+            colorWrite: false,
+            depthWrite: true,
+            depthTest: true,
+          });
+          const headOccluder = new THREE.Mesh(headOccluderGeom, headOccluderMat);
+          headOccluder.renderOrder = 0;
+          headOccluder.visible = false;
+          mindarInstance.scene.add(headOccluder);
+          headOccluderRef.current = headOccluder;
+
           // Load initial glasses if a model src was provided
           if (frameSrc && isModelSrc(frameSrc)) {
             loadFrame(frameSrc);
@@ -1132,6 +1137,28 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
 
           if (cancelled) return;
           reportStatus("ready");
+
+          // Hook multi-face detection to detect if 2 or more faces are in view
+          try {
+            const fmh = (mindarInstance as any).controller?.faceMeshHelper;
+            if (fmh) {
+              if (fmh.faceLandmarker?.setOptions) {
+                fmh.faceLandmarker.setOptions({ numFaces: 2 });
+              }
+              const origDetect = fmh.detect.bind(fmh);
+              fmh.detect = async (input: any) => {
+                const res = await origDetect(input);
+                if (res?.faceLandmarks) {
+                  detectedFaceCountRef.current = res.faceLandmarks.length;
+                } else {
+                  detectedFaceCountRef.current = 0;
+                }
+                return res;
+              };
+            }
+          } catch (e) {
+            console.warn("Multi-face detector hook failed:", e);
+          }
 
           // Load initial glasses using fresh frameSrcRef (prevents closure race condition on route navigation)
           const initialSrc = frameSrcRef.current;
@@ -1217,6 +1244,16 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
           const _earMid = new THREE.Vector3();
           const _tmp = new THREE.Vector3();
           const _pos = new THREE.Vector3();
+          const _faceCenter = new THREE.Vector3();
+          const _projPos = new THREE.Vector3();
+          const _projFore = new THREE.Vector3();
+          const _projChin = new THREE.Vector3();
+          const _projEyeL = new THREE.Vector3();
+          const _projEyeR = new THREE.Vector3();
+          const _projCheekL = new THREE.Vector3();
+          const _projCheekR = new THREE.Vector3();
+          const _projEarL = new THREE.Vector3();
+          const _projEarR = new THREE.Vector3();
           const _basis = new THREE.Matrix4();
           const _qTarget = new THREE.Quaternion();
           const _qUser = new THREE.Quaternion();
@@ -1347,41 +1384,80 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               const isScanActive = scanStateRef.current === "aligning" || scanStateRef.current === "scanning";
 
               if (isScanActive) {
-                if (frontality < 0.92) {
+                // 1. Multi-face rejection: if two or more faces are detected in view, block scan completely
+                if (detectedFaceCountRef.current >= 2) {
                   scanAlignFramesRef.current = 0;
+                  scanSamplesRef.current = [];
                   onScanProgress?.({
                     state: "aligning",
-                    progress: Math.min(100, Math.round((scanSamplesRef.current.length / 25) * 100)),
-                    message: "Please look straight ahead at the camera",
+                    progress: 0,
+                    message: "Multiple faces detected — please keep only one face in view",
                   });
                 } else {
-                  scanAlignFramesRef.current++;
-                  if (scanAlignFramesRef.current >= 3) {
-                    scanStateRef.current = "scanning";
-                    const sample = sampleFaceShapeDetailed(frontality);
-                    if (sample) {
-                      scanSamplesRef.current.push(sample);
-                      const pct = Math.min(100, Math.round((scanSamplesRef.current.length / 25) * 100));
-                      onScanProgress?.({
-                        state: "scanning",
-                        progress: pct,
-                        message: pct < 100 ? `Analyzing 3D facial proportions… ${pct}%` : "Calculating best match…",
-                      });
+                  // 2. Circle / Reticle containment check
+                  _faceCenter.addVectors(_eyeL, _eyeR).multiplyScalar(0.5);
+                  _projPos.copy(_faceCenter).project(camera);
+                  _projFore.copy(_fore).project(camera);
+                  _projChin.copy(_chin).project(camera);
 
-                      if (scanSamplesRef.current.length >= 25) {
-                        scanStateRef.current = "completed";
-                        const res = shapeStabilizerRef.current.solveFromScan(scanSamplesRef.current);
-                        if (res) {
-                          lastShapeRef.current = res.shape;
-                          lastResultRef.current = res;
-                          onFaceShapeDetect?.(res.shape);
-                          onFaceShapeResult?.(res);
-                          onScanProgress?.({
-                            state: "completed",
-                            progress: 100,
-                            message: "Face shape identified!",
-                            result: res,
-                          });
+                  const faceCenterX = _projPos.x;
+                  const faceCenterY = _projPos.y;
+                  const faceHeight = _projFore.y - _projChin.y; // distance from chin to forehead in NDC
+
+                  const isTooFar = faceHeight < 0.35;
+                  const isTooClose = faceHeight > 0.96;
+                  const isOffCenterHoriz = Math.abs(faceCenterX) > 0.24;
+                  const isOffCenterVert = Math.abs(faceCenterY - 0.08) > 0.24;
+                  const isFaceInsideCircle = !isTooFar && !isTooClose && !isOffCenterHoriz && !isOffCenterVert;
+
+                  if (!isFaceInsideCircle) {
+                    scanAlignFramesRef.current = 0;
+                    let alignMsg = "Please position your face inside the circle";
+                    if (isTooFar) alignMsg = "Move closer to the circle";
+                    else if (isTooClose) alignMsg = "Move back slightly from the circle";
+                    else if (isOffCenterHoriz || isOffCenterVert) alignMsg = "Center your face inside the circle";
+
+                    onScanProgress?.({
+                      state: "aligning",
+                      progress: Math.min(100, Math.round((scanSamplesRef.current.length / 25) * 100)),
+                      message: alignMsg,
+                    });
+                  } else if (frontality < 0.92) {
+                    scanAlignFramesRef.current = 0;
+                    onScanProgress?.({
+                      state: "aligning",
+                      progress: Math.min(100, Math.round((scanSamplesRef.current.length / 25) * 100)),
+                      message: "Please look straight ahead at the camera",
+                    });
+                  } else {
+                    scanAlignFramesRef.current++;
+                    if (scanAlignFramesRef.current >= 3) {
+                      scanStateRef.current = "scanning";
+                      const sample = sampleFaceShapeDetailed(frontality);
+                      if (sample) {
+                        scanSamplesRef.current.push(sample);
+                        const pct = Math.min(100, Math.round((scanSamplesRef.current.length / 25) * 100));
+                        onScanProgress?.({
+                          state: "scanning",
+                          progress: pct,
+                          message: pct < 100 ? `Analyzing 3D facial proportions… ${pct}%` : "Calculating best match…",
+                        });
+
+                        if (scanSamplesRef.current.length >= 25) {
+                          scanStateRef.current = "completed";
+                          const res = shapeStabilizerRef.current.solveFromScan(scanSamplesRef.current);
+                          if (res) {
+                            lastShapeRef.current = res.shape;
+                            lastResultRef.current = res;
+                            onFaceShapeDetect?.(res.shape);
+                            onFaceShapeResult?.(res);
+                            onScanProgress?.({
+                              state: "completed",
+                              progress: 100,
+                              message: "Face shape identified!",
+                              result: res,
+                            });
+                          }
                         }
                       }
                     }
@@ -1489,24 +1565,46 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                   const sa2 = shapeAnchorsRef.current;
                   const cl = sa2?.cheekL?.group;
                   const cr = sa2?.cheekR?.group;
-                  let headHalf = _earL.distanceTo(_earR) * 0.5;
+
+                  // Measure skull half-width projected strictly along the glasses frame's transverse (_right) axis.
+                  // Using raw 3D Euclidean distance caused artificial widening whenever the head
+                  // pitched, rolled, or tilted due to Z-depth disparity between the ear landmarks.
+                  const earLat = Math.abs(_tmp.subVectors(_earL, _earR).dot(_right)) * 0.5;
+                  let headHalf = earLat;
                   if (cl?.visible && cr?.visible) {
                     cl.getWorldPosition(_cheekL);
                     cr.getWorldPosition(_cheekR);
-                    headHalf = Math.max(headHalf, _cheekL.distanceTo(_cheekR) * 0.5);
+                    const cheekLat = Math.abs(_tmp.subVectors(_cheekL, _cheekR).dot(_right)) * 0.5;
+                    headHalf = Math.max(headHalf, cheekLat);
+                  }
+                  // Anatomical clamp: head temple half-width is strictly 1.05x to 1.35x of inter-eye distance
+                  headHalf = THREE.MathUtils.clamp(headHalf, eyeDist * 1.05, eyeDist * 1.35);
+
+                  // Calculate required hinge angle:
+                  // 1. Arm reach in model units accounts for user templeLength stretch.
+                  //    A longer arm needs a SMALLER angle to clear the same lateral offset (sin θ = ΔX / L).
+                  // 2. Realistic 3mm clearance avoids floating gap in thin air.
+                  let targetAngle = 0;
+                  if (AR.TEMPLE_SPLAY_STRENGTH > 0) {
+                    const effectiveArmReach = Math.max(1e-6, splay.armReach * Math.max(0.5, adj.templeLength));
+                    const hingeX = splay.hingeX > 0 ? splay.hingeX : splay.halfWidth;
+                    const needModel = Math.max(0, (headHalf + AR.TEMPLE_CLEARANCE) / targetScale - hingeX);
+                    const maxRad = THREE.MathUtils.degToRad(AR.TEMPLE_SPLAY_MAX_DEG);
+                    const sin = THREE.MathUtils.clamp(needModel / effectiveArmReach, 0, Math.sin(maxRad));
+                    targetAngle = Math.min(Math.asin(sin), maxRad) * AR.TEMPLE_SPLAY_STRENGTH;
                   }
 
-                  // How much further out the tip needs to be, converted to an angle at the
-                  // hinge through the arm's own length.
-                  let angle = 0;
-                  if (AR.TEMPLE_SPLAY_STRENGTH > 0) {
-                    const needModel =
-                      (headHalf + AR.TEMPLE_CLEARANCE) / targetScale - splay.halfWidth;
-                    const sin = THREE.MathUtils.clamp(needModel / splay.armReach, 0, 0.9);
-                    angle = Math.min(
-                      Math.asin(sin),
-                      THREE.MathUtils.degToRad(AR.TEMPLE_SPLAY_MAX_DEG),
-                    ) * AR.TEMPLE_SPLAY_STRENGTH;
+                  // Temporal smoothing on splay angle prevents sudden flaring or fluttering during head movement
+                  let angle = targetAngle;
+                  if (splay.appliedAngle < -100) {
+                    splay.appliedAngle = targetAngle;
+                    angle = targetAngle;
+                  } else {
+                    angle = THREE.MathUtils.lerp(
+                      splay.appliedAngle,
+                      targetAngle,
+                      1.0 - Math.exp(-12.0 * clampedDt),
+                    );
                   }
 
                   // Where the ear sits vertically relative to the frame, in model units.
@@ -1521,11 +1619,13 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                   // Rewriting the arm vertices is cheap but not free, and neither target moves
                   // much once a face is tracked. Only rebuild on a change worth seeing.
                   if (
-                    Math.abs(angle - splay.appliedAngle) > 0.004 ||
+                    splay.appliedX < -100 ||
+                    Math.abs(angle - splay.appliedAngle) > 0.002 ||
                     Math.abs(wantTipY - splay.appliedY) > splay.halfWidth * 0.01
                   ) {
                     splay.appliedAngle = angle;
                     splay.appliedY = wantTipY;
+                    splay.appliedX = 0;
                     for (const part of splay.parts) {
                       const arr = part.attr.array as Float32Array;
                       for (let i = 0; i < part.attr.count; i++) {
@@ -1645,11 +1745,82 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                 const s = THREE.MathUtils.lerp(glasses.scale.x, targetScale, kScale);
                 glasses.scale.set(s, s, s * templeZ);
               }
-              // Hide glasses during face scan and while scan modal is open so the face is unobstructed
-              glasses.visible = scanStateRef.current === "idle";
-              reportStatus("tracking");
+              // ── Check if face is cut from the screen / box ────────────────
+              _projFore.copy(_fore).project(camera);
+              _projChin.copy(_chin).project(camera);
+              _projEyeL.copy(_eyeL).project(camera);
+              _projEyeR.copy(_eyeR).project(camera);
+              _projPos.copy(_pos).project(camera);
+
+              let faceMinX = Math.min(_projEyeL.x, _projEyeR.x);
+              let faceMaxX = Math.max(_projEyeL.x, _projEyeR.x);
+
+              if (cheekLg?.visible && cheekRg?.visible) {
+                _projCheekL.copy(_cheekL).project(camera);
+                _projCheekR.copy(_cheekR).project(camera);
+                faceMinX = Math.min(faceMinX, _projCheekL.x, _projCheekR.x);
+                faceMaxX = Math.max(faceMaxX, _projCheekL.x, _projCheekR.x);
+              }
+              if (earLg?.visible && earRg?.visible) {
+                _projEarL.copy(_earL).project(camera);
+                _projEarR.copy(_earR).project(camera);
+                faceMinX = Math.min(faceMinX, _projEarL.x, _projEarR.x);
+                faceMaxX = Math.max(faceMaxX, _projEarL.x, _projEarR.x);
+              }
+
+              const faceMaxY = _projFore.y;
+              const faceMinY = _projChin.y;
+
+              const containerEl = containerRef.current;
+              const cw = containerEl?.clientWidth || 640;
+              const ch = containerEl?.clientHeight || 480;
+              const layoutRect = fitRectRef.current;
+              const fw = layoutRect && layoutRect.width > 0 ? layoutRect.width : cw;
+              const fh = layoutRect && layoutRect.height > 0 ? layoutRect.height : ch;
+
+              // Effective visible limits in NDC (accounting for container cropping)
+              const visibleLimitX = Math.min(1.0, cw / fw);
+              const visibleLimitY = Math.min(1.0, ch / fh);
+
+              // Boundary limits (5% margin from edge of visible area)
+              const boundX = Math.max(0.65, visibleLimitX - 0.05);
+              const boundY = Math.max(0.65, visibleLimitY - 0.05);
+
+              // Hysteresis: require moving slightly further back inside before un-cutting to prevent edge flutter
+              const wasCut = isFaceCutRef.current;
+              const trigX = wasCut ? boundX - 0.04 : boundX;
+              const trigY = wasCut ? boundY - 0.04 : boundY;
+
+              const isFaceCut =
+                faceMinX < -trigX ||
+                faceMaxX > trigX ||
+                faceMaxY > trigY ||
+                faceMinY < -trigY ||
+                Math.abs(_projPos.x) > trigX;
+
+              isFaceCutRef.current = isFaceCut;
+
+              // Hide glasses when face is cut from screen or during face scanning
+              const isGlassesVisible = scanStateRef.current === "idle" && !isFaceCut;
+              glasses.visible = isGlassesVisible;
+              if (headOccluderRef.current) {
+                const ho = headOccluderRef.current;
+                ho.visible = isGlassesVisible;
+                ho.position.copy(_pos);
+                ho.quaternion.copy(_qTarget);
+                ho.scale.set(eyeDist, eyeDist, eyeDist);
+              }
+              if (isFaceCut) {
+                reportStatus("out-of-frame", "Be in box");
+              } else {
+                reportStatus("tracking");
+              }
             } else {
+              isFaceCutRef.current = false;
               wasTrackingRef.current = false;
+              if (headOccluderRef.current) {
+                headOccluderRef.current.visible = false;
+              }
               // Re-seed the speed clock, or the gap counts as elapsed time and the first
               // movement after re-acquiring reads as almost stationary.
               lastPoseChangeRef.current = loopTime;
@@ -1667,10 +1838,11 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               }
               if (scanStateRef.current === "aligning" || scanStateRef.current === "scanning") {
                 scanAlignFramesRef.current = 0;
+                scanSamplesRef.current = [];
                 onScanProgress?.({
                   state: "aligning",
                   progress: 0,
-                  message: "No face detected — please position your face in the frame",
+                  message: "No face in circle — please position your face in the circle",
                 });
               }
               if (glasses) {
@@ -1743,6 +1915,22 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             <p className="rounded-full bg-black/60 px-4 py-1.5 text-xs font-semibold text-white/80 backdrop-blur-sm">
               Position your face in frame
             </p>
+          </div>
+        )}
+        {overlay.status === "out-of-frame" && (
+          <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center p-4">
+            {/* Dashed guide box indicating the safe area */}
+            <div className="absolute inset-4 sm:inset-8 border-2 border-dashed border-amber-400/60 rounded-3xl animate-pulse shadow-[inset_0_0_30px_rgba(245,158,11,0.2)]" />
+            {/* Center warning pill */}
+            <div className="relative flex items-center gap-2.5 rounded-full bg-slate-950/90 border border-amber-500/70 px-5 py-2.5 backdrop-blur-xl shadow-[0_0_30px_rgba(245,158,11,0.45)]">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-400" />
+              </span>
+              <span className="text-xs sm:text-sm font-bold text-amber-200 tracking-wider uppercase">
+                Be in box
+              </span>
+            </div>
           </div>
         )}
       </div>

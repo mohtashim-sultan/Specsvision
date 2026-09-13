@@ -55,12 +55,13 @@ const DEFAULT_ADJUSTMENTS: Record<string, Adjustments> = {
 
 function statusLabel(s: TryOnStatus): string {
   switch (s) {
-    case "loading":  return "Starting…";
-    case "ready":    return "Ready";
-    case "tracking": return "Tracking ✓";
-    case "no-face":  return "No Face Detected";
-    case "error":    return "Error";
-    default:         return "";
+    case "loading":      return "Starting…";
+    case "ready":        return "Ready";
+    case "tracking":     return "Tracking ✓";
+    case "no-face":      return "No Face Detected";
+    case "out-of-frame": return "Be in box";
+    case "error":        return "Error";
+    default:             return "";
   }
 }
 
@@ -161,7 +162,7 @@ export default function VirtualTryOnPage() {
   useEffect(() => {
     if (selectedId === null) return;
     const getInitialAdjustments = (): Adjustments => {
-      const saved = localStorage.getItem(`specsvision_adj_v18_${selectedId}`);
+      const saved = localStorage.getItem(`specsvision_adj_v20_${selectedId}`);
       if (saved) {
         try {
           return JSON.parse(saved);
@@ -285,7 +286,7 @@ export default function VirtualTryOnPage() {
     setAdjustments((prev) => {
       const next = { ...prev, [key]: value };
       if (selectedId !== null) {
-        localStorage.setItem(`specsvision_adj_v18_${selectedId}`, JSON.stringify(next));
+        localStorage.setItem(`specsvision_adj_v20_${selectedId}`, JSON.stringify(next));
       }
       return next;
     });
@@ -323,7 +324,7 @@ export default function VirtualTryOnPage() {
     setAdjustments(next);
     setActivePreset(presetType);
     if (selectedId !== null) {
-      localStorage.setItem(`specsvision_adj_v15_${selectedId}`, JSON.stringify(next));
+      localStorage.setItem(`specsvision_adj_v20_${selectedId}`, JSON.stringify(next));
     }
     toast.success(`Preset "${presetType}" applied!`);
   };
@@ -335,7 +336,7 @@ export default function VirtualTryOnPage() {
     setAdjustments(next);
     setActivePreset(null);
     if (selectedId !== null) {
-      localStorage.removeItem(`specsvision_adj_v15_${selectedId}`);
+      localStorage.removeItem(`specsvision_adj_v20_${selectedId}`);
     }
     toast.success("Adjustments reset to defaults!");
   };
@@ -471,8 +472,8 @@ export default function VirtualTryOnPage() {
                   </div>
 
                   {/* Precision Center Face Frame with Smooth White Progress Ring */}
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <div className="relative w-[210px] sm:w-[240px] aspect-[3/4] max-w-[68vw] flex items-center justify-center">
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pb-12 sm:pb-16">
+                    <div className="relative w-[285px] xs:w-[315px] sm:w-[350px] md:w-[380px] aspect-[200/260] max-w-[84vw] max-h-[66vh] flex items-center justify-center">
                       {/* Smooth SVG Progress Capsule */}
                       <svg
                         className="absolute inset-0 w-full h-full overflow-visible"
@@ -514,10 +515,10 @@ export default function VirtualTryOnPage() {
                       </svg>
 
                       {/* 4 Clean Minimalist Corner Ticks */}
-                      <div className="absolute top-2 left-2 w-4 h-4 border-t-2 border-l-2 border-white/90 rounded-tl-xl" />
-                      <div className="absolute top-2 right-2 w-4 h-4 border-t-2 border-r-2 border-white/90 rounded-tr-xl" />
-                      <div className="absolute bottom-2 left-2 w-4 h-4 border-b-2 border-l-2 border-white/90 rounded-bl-xl" />
-                      <div className="absolute bottom-2 right-2 w-4 h-4 border-b-2 border-r-2 border-white/90 rounded-br-xl" />
+                      <div className="absolute top-1 left-1 w-5 h-5 border-t-2 border-l-2 border-white/90 rounded-tl-xl" />
+                      <div className="absolute top-1 right-1 w-5 h-5 border-t-2 border-r-2 border-white/90 rounded-tr-xl" />
+                      <div className="absolute bottom-1 left-1 w-5 h-5 border-b-2 border-l-2 border-white/90 rounded-bl-xl" />
+                      <div className="absolute bottom-1 right-1 w-5 h-5 border-b-2 border-r-2 border-white/90 rounded-br-xl" />
 
                       {/* Subtle Laser Sweep Bar inside frame */}
                       {scanState === "scanning" && (
@@ -528,9 +529,15 @@ export default function VirtualTryOnPage() {
 
                   {/* Bottom Guidance & Clean Progress Bar */}
                   <div className="absolute bottom-5 sm:bottom-7 inset-x-4 flex justify-center z-30 pointer-events-auto">
-                    <div className="w-full max-w-xs bg-slate-950/95 border border-purple-500/30 rounded-2xl p-3.5 backdrop-blur-xl text-center shadow-2xl space-y-2.5">
+                    <div className={`w-full max-w-xs border rounded-2xl p-3.5 backdrop-blur-xl text-center shadow-2xl space-y-2.5 transition-all duration-200 ${
+                      scanMessage.includes("Multiple")
+                        ? "bg-amber-950/90 border-amber-500/60 shadow-amber-500/20"
+                        : "bg-slate-950/95 border-purple-500/30"
+                    }`}>
                       <div className="flex items-center justify-between text-xs">
-                        <span className="font-semibold text-white">{scanMessage}</span>
+                        <span className={`font-semibold ${scanMessage.includes("Multiple") ? "text-amber-200" : "text-white"}`}>
+                          {scanMessage}
+                        </span>
                         <span className="font-mono font-bold text-purple-400 text-xs">
                           {scanState === "scanning" ? `${scanProgress}%` : ""}
                         </span>
