@@ -1145,20 +1145,20 @@ export default function VirtualTryOnPage() {
             {/* Bottom floating action bar — hidden during face scanning */}
             {!showScanOverlay && (
               <div className="absolute bottom-0 left-1/2 -translate-x-1/2 z-30 w-full flex justify-center px-2 sm:px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pointer-events-none">
-                <div className="glass-chrome pointer-events-auto flex items-center gap-1.5 sm:gap-3 rounded-[26px] px-2.5 sm:px-5 py-2 sm:py-2.5 float-in max-w-full">
+                <div className="glass-chrome pointer-events-auto flex items-center gap-1 sm:gap-3 rounded-[22px] sm:rounded-[26px] px-2 sm:px-5 py-1.5 sm:py-2.5 float-in max-w-full shadow-xl">
                   {/* Mobile Frame Catalog Toggle (Closable & Reopenable on mobile) */}
                   <button
                     type="button"
                     onClick={() => setMobileFramesOpen((prev) => !prev)}
-                    className={`flex flex-col items-center gap-1 transition-colors active:scale-95 md:hidden ${mobileFramesOpen ? "text-purple-600 dark:text-purple-300" : "text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-white"}`}
+                    className={`flex flex-col items-center gap-0.5 sm:gap-1 transition-colors active:scale-95 md:hidden ${mobileFramesOpen ? "text-purple-600 dark:text-purple-300" : "text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-white"}`}
                   >
-                    <span className={`flex h-11 w-11 sm:h-10 sm:w-10 items-center justify-center rounded-2xl ring-1 transition-colors ${mobileFramesOpen ? "bg-purple-500/25 ring-purple-400/40 shadow-[0_0_16px_-2px_rgba(168,85,247,0.6)]" : "bg-purple-50 dark:bg-white/5 hover:bg-purple-100 dark:hover:bg-white/10 ring-purple-200/60 dark:ring-white/5"}`}>
-                      <MaterialIcon name={mobileFramesOpen ? "expand_more" : "view_carousel"} className="!text-lg" />
+                    <span className={`flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl sm:rounded-2xl ring-1 transition-colors ${mobileFramesOpen ? "bg-purple-500/25 ring-purple-400/40 shadow-[0_0_16px_-2px_rgba(168,85,247,0.6)]" : "bg-purple-50 dark:bg-white/5 hover:bg-purple-100 dark:hover:bg-white/10 ring-purple-200/60 dark:ring-white/5"}`}>
+                      <MaterialIcon name={mobileFramesOpen ? "expand_more" : "view_carousel"} className="!text-base sm:!text-lg" />
                     </span>
-                    <span className="text-[9px] font-semibold tracking-wide">{mobileFramesOpen ? "Close" : "Frames"}</span>
+                    <span className="text-[8px] sm:text-[9px] font-semibold tracking-wide">{mobileFramesOpen ? "Close" : "Frames"}</span>
                   </button>
 
-                  <div className="h-9 w-px bg-purple-200/80 dark:bg-white/10 md:hidden" />
+                  <div className="h-8 sm:h-9 w-px bg-purple-200/80 dark:bg-white/10 md:hidden" />
 
                   {/* Single Zoom Button with floating popup options directly above */}
                   <div ref={zoomMenuRef} className="relative flex flex-col items-center">
@@ -1213,58 +1213,58 @@ export default function VirtualTryOnPage() {
                     <button
                       type="button"
                       onClick={() => setShowZoomMenu((prev) => !prev)}
-                      className={`flex flex-col items-center gap-1 transition-colors active:scale-95 ${
+                      className={`flex flex-col items-center gap-0.5 sm:gap-1 transition-colors active:scale-95 ${
                         showZoomMenu
                           ? "text-purple-600 dark:text-purple-300"
                           : "text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-white"
                       }`}
                     >
-                      <span className={`flex h-11 w-11 sm:h-10 sm:w-10 items-center justify-center rounded-2xl ring-1 transition-colors ${
+                      <span className={`flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl sm:rounded-2xl ring-1 transition-colors ${
                         showZoomMenu
                           ? "bg-purple-500/25 ring-purple-400/40 shadow-[0_0_16px_-2px_rgba(168,85,247,0.6)]"
                           : "bg-purple-50 dark:bg-white/5 hover:bg-purple-100 dark:hover:bg-white/10 ring-purple-200/60 dark:ring-white/5"
                       }`}>
-                        <span className="font-mono font-bold text-xs text-purple-600 dark:text-purple-300">
+                        <span className="font-mono font-bold text-[11px] sm:text-xs text-purple-600 dark:text-purple-300">
                           {adjustments.zoom <= 0.7 ? ".5×" : adjustments.zoom <= 1.4 ? "1×" : "2×"}
                         </span>
                       </span>
-                      <span className="text-[9px] font-semibold tracking-wide">Zoom</span>
+                      <span className="text-[8px] sm:text-[9px] font-semibold tracking-wide">Zoom</span>
                     </button>
                   </div>
 
-                  <div className="h-9 w-px bg-purple-200/80 dark:bg-white/10" />
+                  <div className="h-8 sm:h-9 w-px bg-purple-200/80 dark:bg-white/10" />
 
                   <button
                     type="button"
                     onClick={handleSnapshot}
-                    className="flex flex-col items-center gap-1 text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-white transition-colors group active:scale-95"
+                    className="flex flex-col items-center gap-0.5 sm:gap-1 text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-white transition-colors group active:scale-95"
                   >
-                    <span className="flex h-11 w-11 sm:h-10 sm:w-10 items-center justify-center rounded-2xl bg-purple-50 dark:bg-white/5 group-hover:bg-purple-100 dark:group-hover:bg-white/10 ring-1 ring-purple-200/60 dark:ring-white/5 transition-colors">
-                      <MaterialIcon name="photo_camera" className="!text-lg" />
+                    <span className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl sm:rounded-2xl bg-purple-50 dark:bg-white/5 group-hover:bg-purple-100 dark:group-hover:bg-white/10 ring-1 ring-purple-200/60 dark:ring-white/5 transition-colors">
+                      <MaterialIcon name="photo_camera" className="!text-base sm:!text-lg" />
                     </span>
-                    <span className="text-[9px] font-semibold tracking-wide">Snapshot</span>
+                    <span className="text-[8px] sm:text-[9px] font-semibold tracking-wide">Snapshot</span>
                   </button>
 
-                  <div className="h-9 w-px bg-purple-200/80 dark:bg-white/10" />
+                  <div className="h-8 sm:h-9 w-px bg-purple-200/80 dark:bg-white/10" />
 
                   <button
                     type="button"
                     onClick={() => setShowAdjust((p) => !p)}
-                    className={`flex flex-col items-center gap-1 transition-colors active:scale-95 ${showAdjust ? "text-purple-600 dark:text-purple-300" : "text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-white"}`}
+                    className={`flex flex-col items-center gap-0.5 sm:gap-1 transition-colors active:scale-95 ${showAdjust ? "text-purple-600 dark:text-purple-300" : "text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-white"}`}
                   >
-                    <span className={`flex h-11 w-11 sm:h-10 sm:w-10 items-center justify-center rounded-2xl ring-1 transition-colors ${showAdjust ? "bg-purple-500/25 ring-purple-400/40 shadow-[0_0_16px_-2px_rgba(168,85,247,0.6)]" : "bg-purple-50 dark:bg-white/5 hover:bg-purple-100 dark:hover:bg-white/10 ring-purple-200/60 dark:ring-white/5"}`}>
-                      <MaterialIcon name="tune" className="!text-lg" />
+                    <span className={`flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl sm:rounded-2xl ring-1 transition-colors ${showAdjust ? "bg-purple-500/25 ring-purple-400/40 shadow-[0_0_16px_-2px_rgba(168,85,247,0.6)]" : "bg-purple-50 dark:bg-white/5 hover:bg-purple-100 dark:hover:bg-white/10 ring-purple-200/60 dark:ring-white/5"}`}>
+                      <MaterialIcon name="tune" className="!text-base sm:!text-lg" />
                     </span>
-                    <span className="text-[9px] font-semibold tracking-wide">Adjust</span>
+                    <span className="text-[8px] sm:text-[9px] font-semibold tracking-wide">Adjust</span>
                   </button>
 
-                  <div className="h-9 w-px bg-purple-200/80 dark:bg-white/10" />
+                  <div className="h-8 sm:h-9 w-px bg-purple-200/80 dark:bg-white/10" />
 
                   <Link
                     to={selected ? `/shop/${selected.id}` : "/shop"}
-                    className="flex items-center gap-1.5 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-500 px-4 sm:px-5 py-2.5 sm:py-3 text-xs sm:text-sm font-bold text-white shadow-lg shadow-purple-500/25 hover:shadow-purple-500/50 active:scale-95 transition-all whitespace-nowrap"
+                    className="flex items-center gap-1 sm:gap-1.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-purple-600 to-pink-500 px-3 sm:px-5 py-2 sm:py-3 text-[11px] sm:text-sm font-bold text-white shadow-lg shadow-purple-500/25 hover:shadow-purple-500/50 active:scale-95 transition-all whitespace-nowrap"
                   >
-                    <MaterialIcon name="shopping_bag" className="!text-base" />
+                    <MaterialIcon name="shopping_bag" className="!text-sm sm:!text-base" />
                     Buy Now
                   </Link>
                 </div>
@@ -1369,18 +1369,18 @@ export default function VirtualTryOnPage() {
 
       {/* Mobile Catalog Horizontal Carousel — Compact & Closable to maximize camera height */}
       {mobileFramesOpen && (
-        <section className="md:hidden shrink-0 flex flex-col bg-white/95 dark:bg-slate-950/95 border-t border-purple-200/80 dark:border-purple-500/20 max-h-[22dvh] animate-in slide-in-from-bottom duration-300">
-          <div className="flex items-center justify-between px-3.5 pt-2 pb-1 shrink-0">
-            <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-900 dark:text-white">
+        <section className="md:hidden shrink-0 flex flex-col bg-white/95 dark:bg-slate-950/95 border-t border-purple-200/80 dark:border-purple-500/20 max-h-[16dvh] animate-in slide-in-from-bottom duration-300">
+          <div className="flex items-center justify-between px-3 pt-1.5 pb-0.5 shrink-0">
+            <h3 className="text-[9px] font-bold uppercase tracking-widest text-slate-900 dark:text-white">
               {selectedCategory === "All" ? "Select Frame" : selectedCategory} · {filteredProducts.length}
             </h3>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               {/* Mobile Category Select */}
               <select
                 value={selectedCategory}
                 onChange={(e) => setSelectedCategory(e.target.value)}
-                className="tryon-chrome-select text-[10px] font-bold bg-purple-50 text-slate-800 dark:bg-slate-900 dark:text-slate-200 border border-purple-200 dark:border-white/10 rounded-lg px-2 py-0.5"
+                className="tryon-chrome-select text-[9px] font-bold bg-purple-50 text-slate-800 dark:bg-slate-900 dark:text-slate-200 border border-purple-200 dark:border-white/10 rounded-md px-1.5 py-0.5"
               >
                 {categories.map((c) => (
                   <option key={c} value={c} className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">{c}</option>
@@ -1392,20 +1392,20 @@ export default function VirtualTryOnPage() {
                 type="button"
                 onClick={() => setMobileFramesOpen(false)}
                 aria-label="Close frames tray"
-                className="rounded-lg p-0.5 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white bg-purple-50 dark:bg-slate-900 border border-purple-200 dark:border-white/10 transition-colors cursor-pointer"
+                className="rounded-md p-0.5 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white bg-purple-50 dark:bg-slate-900 border border-purple-200 dark:border-white/10 transition-colors cursor-pointer"
               >
-                <MaterialIcon name="close" className="!text-sm" />
+                <MaterialIcon name="close" className="!text-xs" />
               </button>
             </div>
           </div>
 
-          <div className="flex gap-2.5 overflow-x-auto px-3.5 pt-0.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] snap-x snap-mandatory scrollbar-none">
+          <div className="flex gap-2 overflow-x-auto px-3 pt-0.5 pb-[max(0.35rem,env(safe-area-inset-bottom))] snap-x snap-mandatory scrollbar-none">
             {loadingCatalog ? (
-              <div className="flex items-center justify-center w-full py-4">
+              <div className="flex items-center justify-center w-full py-2">
                 <LoadingSpinner size="sm" message="Loading…" />
               </div>
             ) : filteredProducts.length === 0 ? (
-              <div className="py-4 text-center text-[10px] text-slate-500 w-full">
+              <div className="py-2 text-center text-[9px] text-slate-500 w-full">
                 No products found.
               </div>
             ) : (
@@ -1417,21 +1417,21 @@ export default function VirtualTryOnPage() {
                     key={p.id}
                     type="button"
                     onClick={() => handleSelect(p.id)}
-                    className={`relative flex w-[78px] shrink-0 snap-start flex-col rounded-xl border p-1.5 text-left transition-all ${
+                    className={`relative flex w-[64px] shrink-0 snap-start flex-col rounded-lg border p-1 text-left transition-all ${
                       active
-                        ? "border-purple-500 bg-purple-50 dark:bg-purple-500/10 ring-2 ring-purple-500/30 shadow-md"
-                        : "border-purple-100 dark:border-slate-900 bg-white dark:bg-slate-900/30 shadow-sm"
+                        ? "border-purple-500 bg-purple-50 dark:bg-purple-500/10 ring-2 ring-purple-500/30 shadow-sm"
+                        : "border-purple-100 dark:border-slate-900 bg-white dark:bg-slate-900/30 shadow-none"
                     }`}
                   >
-                    <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-slate-900 border border-purple-100 dark:border-slate-800/80">
+                    <div className="relative aspect-square w-full overflow-hidden rounded-md bg-slate-900 border border-purple-100 dark:border-slate-800/80">
                       <img src={displayImageUrl(p)} alt={p.name} className="h-full w-full object-cover" />
                       {active && (
-                        <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-purple-500 shadow-md">
-                          <MaterialIcon name="check" className="!text-[8px] text-white" />
+                        <span className="absolute right-0.5 top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-purple-500 shadow-sm">
+                          <MaterialIcon name="check" className="!text-[7px] text-white" />
                         </span>
                       )}
                     </div>
-                    <p className={`mt-0.5 truncate text-[8px] font-bold px-0.5 ${active ? "text-purple-900 dark:text-white" : "text-slate-900 dark:text-slate-200"}`}>{p.name}</p>
+                    <p className={`mt-0.5 truncate text-[7.5px] font-bold px-0.5 ${active ? "text-purple-900 dark:text-white" : "text-slate-900 dark:text-slate-200"}`}>{p.name}</p>
                     <p className="truncate text-[7px] text-purple-600 dark:text-purple-400 font-semibold px-0.5">{formatPrice(p.price)}</p>
                   </button>
                 );
