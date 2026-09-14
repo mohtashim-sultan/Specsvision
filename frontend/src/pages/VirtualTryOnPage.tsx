@@ -100,6 +100,8 @@ export default function VirtualTryOnPage() {
   );
   const [showZoomMenu,       setShowZoomMenu]       = useState(false);
   const zoomMenuRef = useRef<HTMLDivElement>(null);
+  // Interval ref for auto-cycling glasses when multiple faces block the scan
+  const multiCycleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Click outside to dismiss zoom menu on both desktop and mobile
   useEffect(() => {
@@ -192,10 +194,29 @@ export default function VirtualTryOnPage() {
       : products.filter((p) => p.category?.toLowerCase() === selectedCategory.toLowerCase());
   }, [products, selectedCategory]);
 
-  // Extract top 3 recommended frames for the detected face shape
+  // Extract top 3 recommended frames for the detected face shape.
+  // If any matching product carries lexicon review data (sentiment_score), rank all
+  // candidates by that score so the best-reviewed frames surface first.
+  // If no products have lexicon data (reviews absent / too few), preserve the default
+  // catalogue order — i.e. normal flow — and just slice the first three.
   const shapeRecommendedProducts = useMemo(() => {
     if (!detectedShape) return [];
-    return products.filter((p) => isBestFit(p.category, detectedShape)).slice(0, 3);
+    const matching = products.filter((p) => isBestFit(p.category, detectedShape));
+    const hasLexiconData = matching.some(
+      (p) => p.lexicon_highlights != null && typeof p.lexicon_highlights.sentiment_score === "number",
+    );
+    if (hasLexiconData) {
+      // Lexicon-aware ranking: products with sentiment data sort first (desc), the
+      // rest keep their relative order at the bottom (score treated as -Infinity).
+      const sorted = [...matching].sort((a, b) => {
+        const scoreA = a.lexicon_highlights?.sentiment_score ?? -Infinity;
+        const scoreB = b.lexicon_highlights?.sentiment_score ?? -Infinity;
+        return scoreB - scoreA;
+      });
+      return sorted.slice(0, 3);
+    }
+    // Normal flow: no review data — return first three in catalogue order.
+    return matching.slice(0, 3);
   }, [products, detectedShape]);
 
   const frameSrc = useMemo(() => {
@@ -278,6 +299,54 @@ export default function VirtualTryOnPage() {
     setShowResultModal(true);
     toast.success(`Face shape set to ${shape}!`);
   }, []);
+
+  // ── Multi-face auto-cycle ──────────────────────────────────────────────────
+  // When the scanner blocks because multiple faces are in view, automatically
+  // rotate through the best-fit recommended frames (or all frames when no shape
+  // is known yet) every 2 seconds so the camera feed stays engaging.
+  // The interval is torn down the moment the multi-face condition clears.
+  useEffect(() => {
+    const isMultiFaceBlocked =
+      scanState === "aligning" && scanMessage.includes("Multiple");
+
+    if (isMultiFaceBlocked) {
+      // Already cycling — don't start a second interval.
+      if (multiCycleTimerRef.current !== null) return;
+
+      // Prefer shape-matched frames; fall back to the full visible catalogue.
+      const pool =
+        shapeRecommendedProducts.length > 0
+          ? shapeRecommendedProducts
+          : filteredProducts;
+      if (pool.length === 0) return;
+
+      // Start from the product right after the currently selected one.
+      let idx = Math.max(
+        0,
+        pool.findIndex((p) => p.id === selectedId),
+      );
+
+      multiCycleTimerRef.current = setInterval(() => {
+        idx = (idx + 1) % pool.length;
+        const next = pool[idx];
+        if (next) handleSelect(next.id);
+      }, 2000);
+    } else {
+      // Condition cleared — stop cycling.
+      if (multiCycleTimerRef.current !== null) {
+        clearInterval(multiCycleTimerRef.current);
+        multiCycleTimerRef.current = null;
+      }
+    }
+
+    return () => {
+      if (multiCycleTimerRef.current !== null) {
+        clearInterval(multiCycleTimerRef.current);
+        multiCycleTimerRef.current = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanState, scanMessage]);
 
   // Update a single adjustment value and save to LocalStorage
   // Also clears the active preset since the user is now manually tweaking.
