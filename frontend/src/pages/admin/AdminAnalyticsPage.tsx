@@ -83,7 +83,7 @@ export default function AdminAnalyticsPage() {
         <Card title="Revenue by day">
           <BarChart
             data={data.sales_by_day.map((s) => ({ label: s.date.slice(5), value: Number(s.revenue) }))}
-            format={(n) => `$${n.toFixed(0)}`}
+            format={(n) => `PKR ${Math.round(n).toLocaleString()}`}
           />
         </Card>
 
