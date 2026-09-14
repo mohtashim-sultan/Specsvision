@@ -6,9 +6,11 @@ import { useAuth } from '../../context/AuthContext';
 import { useCompare } from '../../context/CompareContext';
 
 export default function MobileMenu({ isOpen, onClose }) {
-  const { isAuthenticated, user, logout } = useAuth();
+  const { isAuthenticated, user, admin, logout } = useAuth();
   const { count: compareCount } = useCompare();
   const location = useLocation();
+
+  const profilePath = admin ? '/admin' : '/profile';
 
   const menuItems = [
     { path: '/', label: 'Home', icon: Home },
@@ -117,29 +119,59 @@ export default function MobileMenu({ isOpen, onClose }) {
             <div className="px-6 py-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
               {isAuthenticated ? (
                 <>
-                  <div className="flex items-center gap-3 px-4 py-3 mb-3">
-                    <div className="w-10 h-10 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl flex items-center justify-center shadow-md shadow-purple-500/20">
-                      <User className="w-5 h-5 text-white" />
+                  <Link
+                    to={profilePath}
+                    onClick={handleLinkClick}
+                    className="flex items-center justify-between gap-3 p-3.5 mb-3 rounded-2xl border transition-all active:scale-[0.98]"
+                    style={{
+                      backgroundColor: 'rgba(147, 51, 234, 0.05)',
+                      borderColor: 'rgba(147, 51, 234, 0.2)',
+                    }}
+                    aria-label="Open profile settings"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl flex items-center justify-center shadow-md shadow-purple-500/20 text-white font-bold shrink-0">
+                        {(admin ? (admin.full_name || admin.email || 'A') : (user?.full_name || user?.email || 'U')).charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-sm truncate" style={{ color: 'var(--text-primary)' }}>
+                          {admin ? (admin.full_name || admin.email) : (user?.full_name || user?.username || 'User')}
+                        </p>
+                        <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                          {admin ? 'Administrator' : user?.email}
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{user?.full_name || user?.username || 'User'}</p>
-                      <p className="text-sm truncate" style={{ color: 'var(--text-muted)' }}>{user?.email}</p>
-                    </div>
-                  </div>
+                    <span className="text-xs font-semibold px-2.5 py-1 rounded-lg shrink-0 text-white bg-gradient-to-r from-purple-600 to-pink-600 shadow-sm">
+                      {admin ? 'Admin' : 'Edit Profile'}
+                    </span>
+                  </Link>
+
+                  <Link
+                    to={profilePath}
+                    onClick={handleLinkClick}
+                    className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all mb-1 min-h-[48px] touch-manipulation"
+                    style={{ color: 'var(--text-primary)' }}
+                  >
+                    <User className="w-5 h-5 flex-shrink-0" style={{ color: 'var(--text-accent)' }} />
+                    <span className="font-medium">{admin ? 'Admin Dashboard' : 'Profile & Orders'}</span>
+                  </Link>
+
                   <Link
                     to="/cart"
                     onClick={handleLinkClick}
-                    className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all mb-1"
+                    className="flex items-center gap-4 px-4 py-3 rounded-xl transition-all mb-1 min-h-[48px] touch-manipulation"
                     style={{ color: 'var(--text-primary)' }}
                   >
-                    <ShoppingCart className="w-5 h-5" style={{ color: 'var(--text-accent)' }} />
+                    <ShoppingCart className="w-5 h-5 flex-shrink-0" style={{ color: 'var(--text-accent)' }} />
                     <span className="font-medium">Cart</span>
                   </Link>
+
                   <button
                     onClick={handleLogout}
-                    className="w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-colors text-red-500"
+                    className="w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-colors text-red-500 min-h-[48px] touch-manipulation"
                   >
-                    <LogOut className="w-5 h-5" />
+                    <LogOut className="w-5 h-5 flex-shrink-0" />
                     <span className="font-medium">Logout</span>
                   </button>
                 </>

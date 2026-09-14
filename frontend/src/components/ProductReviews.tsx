@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Star, ThumbsUp, ThumbsDown, Minus, Trash2, Pencil } from "lucide-react";
 import toast from "react-hot-toast";
 import { fetchReviews, submitReview, deleteReview } from "../api/reviewApi";
@@ -20,7 +21,7 @@ function Stars({ value, size = 16, onSelect }: { value: number; size?: number; o
           type="button"
           disabled={!onSelect}
           onClick={() => onSelect?.(n)}
-          className={onSelect ? "cursor-pointer transition-transform hover:scale-110" : "cursor-default"}
+          className={onSelect ? "cursor-pointer transition-transform hover:scale-110 active:scale-95 p-1.5 sm:p-1 touch-manipulation min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg" : "cursor-default"}
           aria-label={`${n} star${n > 1 ? "s" : ""}`}
         >
           <Star
@@ -179,7 +180,18 @@ export default function ProductReviews({
 
             {/* Write / edit form */}
             {!isAuthenticated && (
-              <p className="text-sm" style={{ color: "var(--text-muted)" }}>Log in to write a review.</p>
+              <div className="rounded-2xl p-5 border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3" style={{ backgroundColor: "var(--surface-bg)", borderColor: "var(--border-color)" }}>
+                <div>
+                  <p className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>Have you tried this frame?</p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>Sign in to share your review and rating.</p>
+                </div>
+                <Link
+                  to="/login"
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-purple-600 to-pink-600 shadow-md active:scale-95 transition-all touch-manipulation min-h-[38px] flex items-center justify-center shrink-0"
+                >
+                  Sign in to Review
+                </Link>
+              </div>
             )}
             {isAuthenticated && myReview && !editing && (
               <div className="flex gap-2">

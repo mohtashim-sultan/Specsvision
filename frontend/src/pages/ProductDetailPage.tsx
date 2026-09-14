@@ -303,17 +303,35 @@ export default function ProductDetailPage() {
           <div>
             <h1 className="text-3xl font-bold sm:text-4xl" style={{ color: 'var(--text-primary)' }}>{product.name}</h1>
             {reviewCount > 0 ? (
-              <a href="#reviews" className="mt-2 inline-flex items-center gap-1.5 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                <span className="flex items-center gap-0.5 text-yellow-400">
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <Star key={n} className="w-4 h-4 fill-current" style={{ color: n <= Math.round(avgRating ?? 0) ? '#facc15' : 'var(--border-color)' }} />
-                  ))}
-                </span>
-                <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{(avgRating ?? 0).toFixed(1)}</span>
-                <span style={{ color: 'var(--text-muted)' }}>· {reviewCount} review{reviewCount > 1 ? 's' : ''}</span>
-              </a>
+              <div className="mt-2 flex items-center gap-3 flex-wrap">
+                <a href="#reviews" className="inline-flex items-center gap-1.5 text-sm hover:underline" style={{ color: 'var(--text-secondary)' }}>
+                  <span className="flex items-center gap-0.5 text-yellow-400">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <Star key={n} className="w-4 h-4 fill-current" style={{ color: n <= Math.round(avgRating ?? 0) ? '#facc15' : 'var(--border-color)' }} />
+                    ))}
+                  </span>
+                  <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{(avgRating ?? 0).toFixed(1)}</span>
+                  <span style={{ color: 'var(--text-muted)' }}>· {reviewCount} review{reviewCount > 1 ? 's' : ''}</span>
+                </a>
+                <a
+                  href="#reviews"
+                  className="text-xs font-semibold px-2.5 py-1 rounded-lg border transition-all hover:border-purple-500 active:scale-95 touch-manipulation"
+                  style={{ color: 'var(--text-accent)', borderColor: 'var(--border-color)' }}
+                >
+                  Write a review
+                </a>
+              </div>
             ) : (
-              <p className="mt-2 text-sm" style={{ color: 'var(--text-muted)' }}>No reviews yet</p>
+              <div className="mt-2 flex items-center gap-3 flex-wrap">
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No reviews yet</p>
+                <a
+                  href="#reviews"
+                  className="text-xs font-semibold px-2.5 py-1 rounded-lg border transition-all hover:border-purple-500 active:scale-95 touch-manipulation"
+                  style={{ color: 'var(--text-accent)', borderColor: 'var(--border-color)' }}
+                >
+                  Be the first to review
+                </a>
+              </div>
             )}
             <p className="mt-3 text-2xl font-bold" style={{ color: 'var(--text-accent)' }}>{formatPrice(product.price)}</p>
           </div>

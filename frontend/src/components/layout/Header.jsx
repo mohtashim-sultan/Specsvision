@@ -98,12 +98,12 @@ export default function Header() {
             </nav>
 
             {/* Action Icons */}
-            <div className="flex items-center gap-0.5 sm:gap-1.5 shrink-0">
+            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
               {isAuthenticated ? (
-                <div className="hidden sm:flex items-center gap-2">
+                <div className="flex items-center gap-1.5 sm:gap-2">
                   <Link
                     to={admin ? "/admin" : "/profile"}
-                    className="flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 text-white font-bold text-xs shadow-md hover:scale-105 transition-transform"
+                    className="flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 text-white font-bold text-xs shadow-md hover:scale-105 active:scale-95 transition-transform"
                     title={admin ? (admin.full_name || admin.email) : (user?.full_name || user?.email || 'Profile')}
                     aria-label="User profile"
                   >
@@ -111,7 +111,7 @@ export default function Header() {
                   </Link>
                   <button
                     onClick={logout}
-                    className="text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-all"
+                    className="hidden sm:inline-flex text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-all"
                     style={{ color: 'var(--text-accent)' }}
                     onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-accent-hover)'; e.currentTarget.style.backgroundColor = 'var(--surface-bg-secondary)'; }}
                     onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-accent)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
@@ -122,13 +122,14 @@ export default function Header() {
               ) : (
                 <Link
                   to="/login"
-                  className="hidden sm:flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all"
+                  className="flex items-center gap-1 sm:gap-1.5 text-xs font-semibold px-2 sm:px-3 py-1.5 rounded-lg transition-all"
                   style={{ color: 'var(--text-nav)' }}
                   onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-accent)'; e.currentTarget.style.backgroundColor = 'var(--surface-bg-secondary)'; }}
                   onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-nav)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
+                  aria-label="Sign in"
                 >
                   <User className="w-4 h-4" />
-                  Sign in
+                  <span className="hidden xs:inline sm:inline">Sign in</span>
                 </Link>
               )}
 
