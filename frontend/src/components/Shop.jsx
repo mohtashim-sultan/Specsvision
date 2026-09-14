@@ -30,6 +30,16 @@ export default function Shop() {
   const [selectedBrands, setSelectedBrands] = useState([]);
   const [selectedStyles, setSelectedStyles] = useState([]);
   const [selectedPriceRanges, setSelectedPriceRanges] = useState([]);
+  const [selectedLexiconFeature, setSelectedLexiconFeature] = useState(null);
+
+  const lexiconOptions = [
+    { id: 'all_recommended', label: '🌟 Top Sentiment' },
+    { id: 'comfortable', label: '☁️ Comfortable' },
+    { id: 'lightweight', label: '🪶 Lightweight' },
+    { id: 'durable', label: '🛡️ Durable' },
+    { id: 'stylish', label: '✨ Stylish' },
+    { id: 'quality', label: '💎 Premium Quality' },
+  ];
 
   // Filter options
   const categories = [
@@ -147,12 +157,32 @@ export default function Shop() {
       filtered = filtered.filter((p) => vals.includes(p.badge));
     }
 
+    if (selectedLexiconFeature) {
+      if (selectedLexiconFeature === 'all_recommended') {
+        filtered.sort((a, b) => {
+          const scoreA = a.lexicon_highlights?.sentiment_score ?? a.rating ?? 0;
+          const scoreB = b.lexicon_highlights?.sentiment_score ?? b.rating ?? 0;
+          return scoreB - scoreA;
+        });
+      } else {
+        const feat = selectedLexiconFeature.toLowerCase();
+        filtered.sort((a, b) => {
+          const matchA = a.lexicon_highlights?.top_keywords?.includes(feat) ? 1 : 0;
+          const matchB = b.lexicon_highlights?.top_keywords?.includes(feat) ? 1 : 0;
+          if (matchB !== matchA) return matchB - matchA;
+          const scoreA = a.lexicon_highlights?.sentiment_score ?? a.rating ?? 0;
+          const scoreB = b.lexicon_highlights?.sentiment_score ?? b.rating ?? 0;
+          return scoreB - scoreA;
+        });
+      }
+    }
+
     const timer = setTimeout(() => {
       setFilteredProducts(filtered);
       setLoading(false);
     }, 200);
     return () => clearTimeout(timer);
-  }, [initialFetchDone, searchQuery, selectedCategories, selectedBrands, selectedStyles, selectedFaceShapes, selectedPriceRanges, selectedBadges, products]);
+  }, [initialFetchDone, searchQuery, selectedCategories, selectedBrands, selectedStyles, selectedFaceShapes, selectedPriceRanges, selectedBadges, selectedLexiconFeature, products]);
 
   const handleSearch = (query) => setSearchQuery(query);
 
@@ -203,6 +233,49 @@ export default function Shop() {
             </button>
           </div>
         </motion.div>
+
+        {/* Customer Review Sentiment Recommendation Pills */}
+        <div className="mb-6 flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+          <span className="text-xs font-bold uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
+            <span>⭐</span> Review Praise:
+          </span>
+          {lexiconOptions.map((opt) => {
+            const isSelected = selectedLexiconFeature === opt.id;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setSelectedLexiconFeature(isSelected ? null : opt.id)}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition-all border touch-manipulation active:scale-95"
+                style={
+                  isSelected
+                    ? {
+                        background: 'linear-gradient(135deg, #9333ea, #ec4899)',
+                        color: '#ffffff',
+                        borderColor: 'transparent',
+                        boxShadow: '0 2px 10px rgba(147, 51, 234, 0.3)',
+                      }
+                    : {
+                        backgroundColor: 'var(--surface-bg)',
+                        color: 'var(--text-primary)',
+                        borderColor: 'var(--border-color)',
+                      }
+                }
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+          {selectedLexiconFeature && (
+            <button
+              type="button"
+              onClick={() => setSelectedLexiconFeature(null)}
+              className="text-xs text-purple-600 dark:text-purple-400 font-semibold underline shrink-0 ml-1.5 touch-manipulation"
+            >
+              Reset
+            </button>
+          )}
+        </div>
 
         {/* Filters Panel */}
         {filtersOpen && (

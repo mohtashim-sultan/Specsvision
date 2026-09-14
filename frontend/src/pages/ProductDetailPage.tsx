@@ -144,9 +144,25 @@ export default function ProductDetailPage() {
   const related = useMemo(() => {
     if (!product) return [];
     const others = catalog.filter((p) => p.id !== product.id);
-    const sameCat = product.category ? others.filter((p) => p.category && p.category === product.category) : [];
-    const pool = sameCat.length > 0 ? sameCat : others;
-    return pool.slice(0, 4);
+    const myKeywords = product.lexicon_highlights?.top_keywords || [];
+
+    // Prioritize products matching category and overlapping positive lexicon keywords
+    const sorted = [...others].sort((a, b) => {
+      const aCat = a.category && a.category === product.category ? 2 : 0;
+      const bCat = b.category && b.category === product.category ? 2 : 0;
+
+      const aKeywords = a.lexicon_highlights?.top_keywords || [];
+      const bKeywords = b.lexicon_highlights?.top_keywords || [];
+      const aOverlap = aKeywords.filter((k) => myKeywords.includes(k)).length;
+      const bOverlap = bKeywords.filter((k) => myKeywords.includes(k)).length;
+
+      const aScore = aCat + aOverlap + ((a.lexicon_highlights?.sentiment_score || a.avg_rating || 0) * 0.2);
+      const bScore = bCat + bOverlap + ((b.lexicon_highlights?.sentiment_score || b.avg_rating || 0) * 0.2);
+
+      return bScore - aScore;
+    });
+
+    return sorted.slice(0, 4);
   }, [catalog, product]);
 
   async function handleAdd() {
@@ -331,6 +347,18 @@ export default function ProductDetailPage() {
                 >
                   Be the first to review
                 </a>
+              </div>
+            )}
+            {product.lexicon_highlights && product.lexicon_highlights.positive_percentage >= 70 && (
+              <div className="mt-2.5 flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/40 shadow-xs">
+                  <span>👍</span> {product.lexicon_highlights.positive_percentage}% Positive Sentiment
+                </span>
+                {product.lexicon_highlights.top_keywords?.slice(0, 2).map((kw) => (
+                  <span key={kw} className="text-xs font-medium px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/40 capitalize">
+                    Praised for {kw}
+                  </span>
+                ))}
               </div>
             )}
             <p className="mt-3 text-2xl font-bold" style={{ color: 'var(--text-accent)' }}>{formatPrice(product.price)}</p>

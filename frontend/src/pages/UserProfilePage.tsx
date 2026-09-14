@@ -32,6 +32,7 @@ export default function UserProfilePage() {
   const [reviewTitle, setReviewTitle] = useState('');
   const [reviewBody, setReviewBody] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [reviewedProductIds, setReviewedProductIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     if (tabParam === 'orders') {
@@ -129,6 +130,7 @@ export default function UserProfilePage() {
         body: reviewBody.trim() || null,
       });
       toast.success(`Thanks! Review submitted for ${reviewModalItem.productName}.`);
+      setReviewedProductIds(prev => new Set(prev).add(reviewModalItem.productId));
       handleCloseReview();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to submit review");
@@ -368,11 +370,15 @@ export default function UserProfilePage() {
                                     <button
                                       type="button"
                                       onClick={() => handleOpenReview(item)}
-                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-purple-600 to-pink-600 shadow-sm hover:shadow-md active:scale-95 transition-all touch-manipulation min-h-[36px]"
-                                      aria-label={`Review ${item.product_name}`}
+                                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white shadow-sm hover:shadow-md active:scale-95 transition-all touch-manipulation min-h-[36px] ${
+                                        reviewedProductIds.has(item.product_id)
+                                          ? 'bg-gradient-to-r from-green-500 to-emerald-500'
+                                          : 'bg-gradient-to-r from-purple-600 to-pink-600'
+                                      }`}
+                                      aria-label={reviewedProductIds.has(item.product_id) ? `Edit review for ${item.product_name}` : `Review ${item.product_name}`}
                                     >
                                       <Star className="w-3.5 h-3.5 fill-current" />
-                                      Review Item
+                                      {reviewedProductIds.has(item.product_id) ? 'Edit Review' : 'Review Item'}
                                     </button>
                                   )}
                                 </div>

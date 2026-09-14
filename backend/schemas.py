@@ -57,6 +57,12 @@ class ProductColor(BaseModel):
     hex: str = Field(pattern=r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 
 
+class LexiconHighlights(BaseModel):
+    positive_percentage: int
+    top_keywords: list[str] = []
+    sentiment_score: float
+
+
 class ProductOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -81,6 +87,7 @@ class ProductOut(BaseModel):
     # Aggregated from reviews; populated by the product endpoints (None when no reviews yet).
     avg_rating: float | None = None
     review_count: int = 0
+    lexicon_highlights: LexiconHighlights | None = None
 
     @field_validator("colors", mode="before")
     @classmethod

@@ -1,5 +1,11 @@
 export type ProductColor = { name: string; hex: string };
 
+export type LexiconHighlights = {
+  positive_percentage: number;
+  top_keywords: string[];
+  sentiment_score: number;
+};
+
 export type Product = {
   id: number;
   sku: string;
@@ -21,6 +27,7 @@ export type Product = {
   colors?: ProductColor[];
   avg_rating?: number | null;
   review_count?: number;
+  lexicon_highlights?: LexiconHighlights | null;
 };
 
 export type AdminUser = {

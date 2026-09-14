@@ -158,7 +158,7 @@ export default function ProductCard({ product }) {
             {product.name}
           </h3>
         </Link>
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-center gap-2 mb-2 flex-wrap">
           {product.reviews > 0 ? (
             <div className="flex items-center text-yellow-400">
               <Star className="w-4 h-4 fill-current" />
@@ -169,7 +169,23 @@ export default function ProductCard({ product }) {
           ) : (
             <span className="text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>No reviews yet</span>
           )}
+          {product.lexicon_highlights && product.lexicon_highlights.positive_percentage >= 70 && (
+            <span
+              className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+              style={{ backgroundColor: 'rgba(34,197,94,0.1)', color: '#22c55e' }}
+              title={`${product.lexicon_highlights.positive_percentage}% positive reviews`}
+            >
+              👍 {product.lexicon_highlights.positive_percentage}% Positive
+            </span>
+          )}
         </div>
+        {product.lexicon_highlights?.top_keywords && product.lexicon_highlights.top_keywords.length > 0 && (
+          <div className="mb-2 flex items-center gap-1">
+            <span className="text-[10px] font-semibold text-purple-700 dark:text-purple-300 bg-purple-100/70 dark:bg-purple-950/50 border border-purple-200 dark:border-purple-800/40 px-2 py-0.5 rounded-full capitalize">
+              Praised for {product.lexicon_highlights.top_keywords[0]}
+            </span>
+          </div>
+        )}
         <div className="flex flex-wrap gap-1 mb-3">
           {/* Capped at three. faceShapes now carries every face shape a frame genuinely
               suits, which for a versatile category is five or six -- enough chips to wrap

@@ -59,7 +59,11 @@ from schemas import (
 from security import create_access_token, hash_password, verify_password
 import stripe_service
 import storage_service
-from sentiment import classify as classify_sentiment
+from sentiment import (
+    classify as classify_sentiment,
+    compute_lexicon_metrics,
+    LEXICON_FEATURE_MAP,
+)
 
 # Static coupon table: code -> (kind, value). "percent" is a fraction of subtotal, "flat" a $ amount.
 _COUPONS: dict[str, tuple[str, Decimal]] = {
@@ -129,7 +133,7 @@ def _colors_to_json(colors) -> str | None:
 
 
 def _attach_ratings(db: Session, products: list[Product]) -> None:
-    """Populate avg_rating/review_count on ORM Product instances (non-persistent attributes)."""
+    """Populate avg_rating/review_count and lexicon_highlights on ORM Product instances."""
     ids = [p.id for p in products]
     if not ids:
         return
@@ -139,10 +143,21 @@ def _attach_ratings(db: Session, products: list[Product]) -> None:
         .group_by(Review.product_id)
     ).all()
     stats = {pid: (round(float(avg), 2), int(count)) for pid, avg, count in rows}
+
+    # Fetch reviews for these products to compute lexicon metrics
+    all_reviews = db.scalars(
+        select(Review).where(Review.product_id.in_(ids))
+    ).all()
+    reviews_by_pid: dict[int, list[Review]] = {}
+    for r in all_reviews:
+        reviews_by_pid.setdefault(r.product_id, []).append(r)
+
     for product in products:
         avg, count = stats.get(product.id, (None, 0))
         product.avg_rating = avg
         product.review_count = count
+        prod_reviews = reviews_by_pid.get(product.id, [])
+        product.lexicon_highlights = compute_lexicon_metrics(prod_reviews)
 
 
 def _author_name(user: User) -> str:
@@ -495,6 +510,44 @@ def list_products(
     products = list(db.scalars(stmt).all())
     _attach_ratings(db, products)
     return products
+
+
+@products_router.get("/recommendations/lexicon", response_model=list[ProductOut])
+def recommend_products_by_lexicon(
+    feature: str | None = Query(default=None, description="Lexicon feature: comfortable, lightweight, durable, stylish, quality"),
+    category: str | None = Query(default=None),
+    limit: int = Query(default=6, ge=1, le=50),
+    db: Session = Depends(get_db),
+) -> list[Product]:
+    """Recommend products based on customer review sentiment and positive lexicon keyword highlights."""
+    stmt = select(Product).where(Product.stock_quantity > 0)
+    if category:
+        stmt = stmt.where(Product.category == category.strip())
+    products = list(db.scalars(stmt).all())
+    _attach_ratings(db, products)
+
+    target_keywords: set[str] = set()
+    if feature:
+        feat = feature.lower().strip()
+        target_keywords = LEXICON_FEATURE_MAP.get(feat, {feat})
+
+    def sort_key(p: Product) -> tuple[int, float, float, float]:
+        hl = getattr(p, "lexicon_highlights", None)
+        has_kw_match = 0
+        score = 0.0
+        pos_pct = 0.0
+        avg_r = p.avg_rating or 0.0
+        if hl:
+            score = hl.get("sentiment_score", 0.0)
+            pos_pct = hl.get("positive_percentage", 0.0)
+            top_kws = hl.get("top_keywords", [])
+            if target_keywords and any(kw in target_keywords for kw in top_kws):
+                has_kw_match = 1
+        return (has_kw_match, score, pos_pct, avg_r)
+
+    # Sort products with feature keyword match first, then by sentiment score & rating
+    recommended = sorted(products, key=sort_key, reverse=True)
+    return recommended[:limit]
 
 
 @products_router.get("/{product_id}", response_model=ProductOut)
