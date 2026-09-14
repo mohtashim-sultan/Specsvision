@@ -16,23 +16,59 @@ function Card({ children, title }: { children: React.ReactNode; title: string })
   );
 }
 
-// Simple responsive bar chart (values already numeric).
-function BarChart({ data, format }: { data: { label: string; value: number }[]; format?: (n: number) => string }) {
-  if (data.length === 0) return <p className="text-sm" style={{ color: "var(--text-muted)" }}>No data yet.</p>;
+interface BarChartProps {
+  data: { label: string; value: number }[];
+  format?: (n: number) => string;
+  labelWidth?: string;
+  accentColor?: string;
+}
+
+// Senior developer clean horizontal bar chart with separate value column (never wraps or clips)
+function BarChart({
+  data,
+  format,
+  labelWidth = "w-20",
+  accentColor = ACCENT,
+}: BarChartProps) {
+  if (data.length === 0) return <p className="text-sm py-4 text-center" style={{ color: "var(--text-muted)" }}>No data yet.</p>;
   const max = Math.max(...data.map((d) => d.value), 1);
   return (
-    <div className="space-y-2.5">
-      {data.map((d, i) => (
-        <div key={i} className="flex items-center gap-3 text-xs">
-          <span className="w-24 shrink-0 truncate" style={{ color: "var(--text-secondary)" }} title={d.label}>{d.label}</span>
-          <div className="flex-1 h-5 rounded-md overflow-hidden" style={{ backgroundColor: "var(--surface-bg-secondary)" }}>
-            <div className="h-full rounded-md flex items-center justify-end pr-2 text-[10px] font-bold text-white"
-              style={{ width: `${Math.max((d.value / max) * 100, 4)}%`, backgroundColor: ACCENT }}>
-              {d.value > 0 ? (format ? format(d.value) : d.value) : ""}
+    <div className="space-y-3">
+      {data.map((d, i) => {
+        const pct = max > 0 ? Math.min(100, Math.round((d.value / max) * 100)) : 0;
+        const formattedValue = format ? format(d.value) : d.value.toLocaleString();
+
+        return (
+          <div key={i} className="flex items-center gap-3 text-xs group">
+            <span
+              className={`${labelWidth} shrink-0 truncate font-medium`}
+              style={{ color: "var(--text-secondary)" }}
+              title={d.label}
+            >
+              {d.label}
+            </span>
+            <div
+              className="flex-1 h-3 rounded-full overflow-hidden"
+              style={{ backgroundColor: "var(--surface-bg-secondary)" }}
+            >
+              <div
+                className="h-full rounded-full transition-all duration-500 ease-out"
+                style={{
+                  width: `${pct}%`,
+                  backgroundColor: accentColor,
+                  minWidth: d.value > 0 ? "6px" : "0px",
+                }}
+              />
             </div>
+            <span
+              className="shrink-0 text-right font-semibold text-xs tabular-nums whitespace-nowrap min-w-[5.5rem]"
+              style={{ color: "var(--text-primary)" }}
+            >
+              {formattedValue}
+            </span>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -84,15 +120,24 @@ export default function AdminAnalyticsPage() {
           <BarChart
             data={data.sales_by_day.map((s) => ({ label: s.date.slice(5), value: Number(s.revenue) }))}
             format={(n) => `PKR ${Math.round(n).toLocaleString()}`}
+            labelWidth="w-16"
           />
         </Card>
 
         <Card title="Top products (units sold)">
-          <BarChart data={data.top_products.map((p) => ({ label: p.name, value: p.units_sold }))} />
+          <BarChart
+            data={data.top_products.map((p) => ({ label: p.name, value: p.units_sold }))}
+            format={(n) => `${n.toLocaleString()} units`}
+            labelWidth="w-28 sm:w-36"
+          />
         </Card>
 
         <Card title="Rating distribution">
-          <BarChart data={[5, 4, 3, 2, 1].map((star) => ({ label: `${star} ★`, value: data.rating_distribution[String(star)] ?? 0 }))} />
+          <BarChart
+            data={[5, 4, 3, 2, 1].map((star) => ({ label: `${star} ★`, value: data.rating_distribution[String(star)] ?? 0 }))}
+            format={(n) => `${n}`}
+            labelWidth="w-12"
+          />
         </Card>
 
         <Card title="Review sentiment">
