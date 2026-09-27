@@ -3,7 +3,7 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { updateProfileRequest } from '../api/authApi';
 import { fetchUserOrders, cancelOrder } from '../api/cartApi';
-import { submitReview } from '../api/reviewApi';
+import { submitReview, fetchMyReviews } from '../api/reviewApi';
 import { User, Mail, Calendar, Package, ChevronDown, ChevronUp, CheckCircle, Clock, Truck, XCircle, Star, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/common/LoadingSpinner';
@@ -33,6 +33,7 @@ export default function UserProfilePage() {
   const [reviewBody, setReviewBody] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
   const [reviewedProductIds, setReviewedProductIds] = useState<Set<number>>(new Set());
+  const [userReviewsMap, setUserReviewsMap] = useState<Record<number, any>>({});
 
   useEffect(() => {
     if (tabParam === 'orders') {
@@ -64,17 +65,30 @@ export default function UserProfilePage() {
 
   useEffect(() => {
     let cancelled = false;
-    const loadOrders = async () => {
+    const loadOrdersAndReviews = async () => {
       try {
-        const list = await fetchUserOrders();
-        if (!cancelled) setOrders(list);
+        const [list, myReviews] = await Promise.all([
+          fetchUserOrders(),
+          fetchMyReviews().catch(() => []),
+        ]);
+        if (!cancelled) {
+          setOrders(list);
+          if (Array.isArray(myReviews)) {
+            const map: Record<number, any> = {};
+            myReviews.forEach((r: any) => {
+              if (r.product_id) map[r.product_id] = r;
+            });
+            setUserReviewsMap(map);
+            setReviewedProductIds(new Set(myReviews.map((r: any) => r.product_id)));
+          }
+        }
       } catch (err) {
-        console.error("Failed to load orders:", err);
+        console.error("Failed to load dashboard data:", err);
       } finally {
         if (!cancelled) setLoadingOrders(false);
       }
     };
-    loadOrders();
+    loadOrdersAndReviews();
     return () => { cancelled = true; };
   }, []);
 
@@ -98,18 +112,34 @@ export default function UserProfilePage() {
     }
   };
 
-  const handleOpenReview = (item: any) => {
+  const handleOpenReview = (item: any, orderStatus?: string) => {
     if (!item.product_id) {
       toast.error("Product information unavailable for review");
       return;
     }
+    const status = String(orderStatus || '').toLowerCase();
+    if (status !== 'delivered' && status !== 'completed') {
+      if (status === 'cancelled') {
+        toast.error("Cannot review items from cancelled orders.");
+      } else {
+        toast.error(`Order is currently ${orderStatus || 'in progress'}. You can only review products after they have been delivered.`);
+      }
+      return;
+    }
+    const existing = userReviewsMap[item.product_id];
     setReviewModalItem({
       productId: item.product_id,
       productName: item.product_name,
     });
-    setReviewRating(5);
-    setReviewTitle('');
-    setReviewBody('');
+    if (existing) {
+      setReviewRating(existing.rating || 5);
+      setReviewTitle(existing.title || '');
+      setReviewBody(existing.body || '');
+    } else {
+      setReviewRating(5);
+      setReviewTitle('');
+      setReviewBody('');
+    }
   };
 
   const handleCloseReview = () => {
@@ -124,13 +154,15 @@ export default function UserProfilePage() {
     if (!reviewModalItem) return;
     setSubmittingReview(true);
     try {
-      await submitReview(reviewModalItem.productId, {
+      const savedReview = await submitReview(reviewModalItem.productId, {
         rating: reviewRating,
         title: reviewTitle.trim() || null,
         body: reviewBody.trim() || null,
       });
-      toast.success(`Thanks! Review submitted for ${reviewModalItem.productName}.`);
+      const isEdit = Boolean(userReviewsMap[reviewModalItem.productId]);
+      toast.success(`Thanks! Review ${isEdit ? 'updated' : 'submitted'} for ${reviewModalItem.productName}.`);
       setReviewedProductIds(prev => new Set(prev).add(reviewModalItem.productId));
+      setUserReviewsMap(prev => ({ ...prev, [reviewModalItem.productId]: savedReview }));
       handleCloseReview();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to submit review");
@@ -366,21 +398,54 @@ export default function UserProfilePage() {
                                   <span className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>
                                     PKR {Number(item.line_total).toLocaleString()}
                                   </span>
-                                  {item.product_id && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenReview(item)}
-                                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white shadow-sm hover:shadow-md active:scale-95 transition-all touch-manipulation min-h-[36px] ${
-                                        reviewedProductIds.has(item.product_id)
-                                          ? 'bg-gradient-to-r from-green-500 to-emerald-500'
-                                          : 'bg-gradient-to-r from-purple-600 to-pink-600'
-                                      }`}
-                                      aria-label={reviewedProductIds.has(item.product_id) ? `Edit review for ${item.product_name}` : `Review ${item.product_name}`}
-                                    >
-                                      <Star className="w-3.5 h-3.5 fill-current" />
-                                      {reviewedProductIds.has(item.product_id) ? 'Edit Review' : 'Review Item'}
-                                    </button>
-                                  )}
+                                  {item.product_id && (() => {
+                                    const statusLower = String(order.status || '').toLowerCase();
+                                    const isDelivered = statusLower === 'delivered' || statusLower === 'completed';
+                                    const isCancelled = statusLower === 'cancelled';
+                                    const hasReviewed = reviewedProductIds.has(item.product_id);
+
+                                    if (isCancelled) {
+                                      return null;
+                                    }
+
+                                    if (isDelivered) {
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenReview(item, order.status)}
+                                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white shadow-sm hover:shadow-md active:scale-95 transition-all touch-manipulation min-h-[36px] ${
+                                            hasReviewed
+                                              ? 'bg-gradient-to-r from-green-500 to-emerald-500'
+                                              : 'bg-gradient-to-r from-purple-600 to-pink-600'
+                                          }`}
+                                          aria-label={hasReviewed ? `Edit review for ${item.product_name}` : `Review ${item.product_name}`}
+                                        >
+                                          <Star className="w-3.5 h-3.5 fill-current" />
+                                          {hasReviewed ? 'Edit Review' : 'Review Item'}
+                                        </button>
+                                      );
+                                    }
+
+                                    return (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          toast.error(`Order #${order.id} is currently ${order.status}. You can review this item once it has been delivered.`);
+                                        }}
+                                        title={`Review available once delivered (Order #${order.id} is ${order.status})`}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all touch-manipulation min-h-[36px] cursor-pointer hover:border-amber-400 active:scale-95 border"
+                                        style={{
+                                          backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                                          borderColor: 'rgba(245, 158, 11, 0.3)',
+                                          color: '#d97706',
+                                        }}
+                                        aria-label={`Review available once order #${order.id} is delivered`}
+                                      >
+                                        <Clock className="w-3.5 h-3.5" />
+                                        <span>Review upon delivery</span>
+                                      </button>
+                                    );
+                                  })()}
                                 </div>
                               </li>
                             ))}
@@ -434,7 +499,7 @@ export default function UserProfilePage() {
               <div>
                 <span className="text-xs font-bold uppercase tracking-wider text-purple-600">Share Your Experience</span>
                 <h3 className="text-xl font-bold mt-1" style={{ color: 'var(--text-primary)' }}>
-                  Review {reviewModalItem.productName}
+                  {userReviewsMap[reviewModalItem.productId] ? `Edit Review: ${reviewModalItem.productName}` : `Review ${reviewModalItem.productName}`}
                 </h3>
               </div>
               <button
@@ -509,7 +574,7 @@ export default function UserProfilePage() {
                   disabled={submittingReview}
                   className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 px-5 rounded-xl font-semibold text-sm shadow-md hover:shadow-lg disabled:opacity-50 active:scale-[0.98] transition-all min-h-[44px] touch-manipulation flex items-center justify-center"
                 >
-                  {submittingReview ? 'Submitting Review...' : 'Submit Review'}
+                  {submittingReview ? 'Saving...' : userReviewsMap[reviewModalItem.productId] ? 'Update Review' : 'Submit Review'}
                 </button>
                 <Link
                   to={`/shop/${reviewModalItem.productId}#reviews`}

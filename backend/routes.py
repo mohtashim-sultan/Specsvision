@@ -550,6 +550,22 @@ def recommend_products_by_lexicon(
     return recommended[:limit]
 
 
+@products_router.get("/user/my-reviews", response_model=list[ReviewOut])
+def list_my_reviews(
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[ReviewOut]:
+    reviews = list(
+        db.scalars(
+            select(Review)
+            .where(Review.user_id == current.id)
+            .options(joinedload(Review.user))
+            .order_by(Review.id.desc())
+        ).all()
+    )
+    return [_review_out(r, current.id) for r in reviews]
+
+
 @products_router.get("/{product_id}", response_model=ProductOut)
 def get_product(product_id: int, db: Session = Depends(get_db)) -> Product:
     product = db.get(Product, product_id)
@@ -588,6 +604,33 @@ def list_reviews(
     current_id = current.id if current else None
     items = [_review_out(r, current_id) for r in reviews]
     my_review = next((item for item in items if item.is_mine), None)
+
+    # Determine review eligibility for current user
+    can_review = False
+    review_eligibility_reason: str | None = None
+
+    if current is None:
+        can_review = False
+        review_eligibility_reason = "not_logged_in"
+    else:
+        order_statuses = list(
+            db.scalars(
+                select(Order.status)
+                .join(OrderItem, OrderItem.order_id == Order.id)
+                .where(Order.user_id == current.id, OrderItem.product_id == product_id)
+            ).all()
+        )
+        non_cancelled = [s for s in order_statuses if s.lower() != "cancelled"]
+        if not non_cancelled:
+            can_review = False
+            review_eligibility_reason = "not_purchased"
+        elif any(s.lower() in ("delivered", "completed") for s in non_cancelled):
+            can_review = True
+            review_eligibility_reason = "delivered"
+        else:
+            can_review = False
+            review_eligibility_reason = "not_delivered"
+
     return ReviewListOut(
         summary=ReviewSummary(
             review_count=len(reviews),
@@ -597,6 +640,8 @@ def list_reviews(
         ),
         items=items,
         my_review=my_review,
+        can_review=can_review,
+        review_eligibility_reason=review_eligibility_reason,
     )
 
 
@@ -609,6 +654,29 @@ def upsert_review(
 ) -> ReviewOut:
     if db.get(Product, product_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+
+    # Enforce: only customers with a delivered order for this product can review it
+    order_statuses = list(
+        db.scalars(
+            select(Order.status)
+            .join(OrderItem, OrderItem.order_id == Order.id)
+            .where(Order.user_id == current.id, OrderItem.product_id == product_id)
+        ).all()
+    )
+    non_cancelled = [s for s in order_statuses if s.lower() != "cancelled"]
+    if not non_cancelled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only review products that you have purchased and received.",
+        )
+
+    has_delivered = any(s.lower() in ("delivered", "completed") for s in non_cancelled)
+    if not has_delivered:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only review this product after your order has been delivered.",
+        )
+
     sentiment = classify_sentiment(body.rating, body.title, body.body)
     existing = db.scalar(
         select(Review).where(Review.product_id == product_id, Review.user_id == current.id)

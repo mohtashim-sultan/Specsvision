@@ -16,3 +16,7 @@ export function submitReview(productId: number, payload: ReviewPayload): Promise
 export function deleteReview(productId: number): Promise<void> {
   return apiRequest<void>(`/api/products/${productId}/reviews`, { method: "DELETE" });
 }
+
+export function fetchMyReviews(): Promise<Review[]> {
+  return apiRequest<Review[]>("/api/products/user/my-reviews");
+}

@@ -133,6 +133,8 @@ class ReviewListOut(BaseModel):
     summary: ReviewSummary
     items: list[ReviewOut]
     my_review: ReviewOut | None = None
+    can_review: bool = False
+    review_eligibility_reason: str | None = None
 
 
 class ProductListOut(BaseModel):

@@ -59,3 +59,4 @@ venv/
 # Local editor settings
 .vscode/
 .idea/
+powershell.cmd

@@ -80,6 +80,8 @@ export type ReviewList = {
   summary: ReviewSummary;
   items: Review[];
   my_review: Review | null;
+  can_review?: boolean;
+  review_eligibility_reason?: "delivered" | "not_delivered" | "not_purchased" | "not_logged_in" | string | null;
 };
 
 export type ReviewPayload = {

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Star, ThumbsUp, ThumbsDown, Minus, Trash2, Pencil } from "lucide-react";
+import { Star, ThumbsUp, ThumbsDown, Minus, Trash2, Pencil, Truck, ShieldCheck, CheckCircle2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { fetchReviews, submitReview, deleteReview } from "../api/reviewApi";
 import { useAuth } from "../context/AuthContext";
@@ -112,7 +112,9 @@ export default function ProductReviews({
 
   const summary = data?.summary;
   const myReview = data?.my_review ?? null;
-  const showForm = isAuthenticated && (!myReview || editing);
+  const canReview = Boolean(data?.can_review);
+  const eligibilityReason = data?.review_eligibility_reason;
+  const showForm = isAuthenticated && ((myReview && editing) || (!myReview && canReview));
 
   return (
     <section className="mt-16 pt-12" style={{ borderTop: "1px solid var(--border-color)" }}>
@@ -178,12 +180,12 @@ export default function ProductReviews({
               )}
             </div>
 
-            {/* Write / edit form */}
+            {/* Write / edit form or status notices */}
             {!isAuthenticated && (
               <div className="rounded-2xl p-5 border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3" style={{ backgroundColor: "var(--surface-bg)", borderColor: "var(--border-color)" }}>
                 <div>
-                  <p className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>Have you tried this frame?</p>
-                  <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>Sign in to share your review and rating.</p>
+                  <p className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>Have you received this frame?</p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>Sign in to share your review after your order is delivered.</p>
                 </div>
                 <Link
                   to="/login"
@@ -193,19 +195,89 @@ export default function ProductReviews({
                 </Link>
               </div>
             )}
+
             {isAuthenticated && myReview && !editing && (
-              <div className="flex gap-2">
-                <button onClick={() => setEditing(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ backgroundColor: "rgba(147,51,234,0.08)", color: "var(--text-accent)", border: "1px solid var(--border-color)" }}>
-                  <Pencil className="w-3.5 h-3.5" /> Edit your review
-                </button>
-                <button onClick={handleDelete} disabled={submitting} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50" style={{ backgroundColor: "rgba(239,68,68,0.08)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)" }}>
-                  <Trash2 className="w-3.5 h-3.5" /> Delete
-                </button>
+              <div className="space-y-3">
+                <div className="rounded-2xl p-3.5 border flex items-center gap-2.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border-emerald-500/20">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-500" />
+                  <span>You reviewed this delivered product.</span>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setEditing(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer active:scale-95 transition-all" style={{ backgroundColor: "rgba(147,51,234,0.08)", color: "var(--text-accent)", border: "1px solid var(--border-color)" }}>
+                    <Pencil className="w-3.5 h-3.5" /> Edit your review
+                  </button>
+                  <button onClick={handleDelete} disabled={submitting} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50 cursor-pointer active:scale-95 transition-all" style={{ backgroundColor: "rgba(239,68,68,0.08)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)" }}>
+                    <Trash2 className="w-3.5 h-3.5" /> Delete
+                  </button>
+                </div>
               </div>
             )}
+
+            {isAuthenticated && !myReview && !canReview && eligibilityReason === "not_delivered" && (
+              <div
+                className="rounded-2xl p-5 border space-y-3"
+                style={{
+                  backgroundColor: "rgba(245, 158, 11, 0.06)",
+                  borderColor: "rgba(245, 158, 11, 0.35)",
+                }}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-500 shrink-0 mt-0.5">
+                    <Truck className="w-5 h-5" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>
+                      Review Available Upon Delivery
+                    </h4>
+                    <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+                      Your order containing this item has not been delivered yet. You will be able to submit your verified review as soon as your package arrives!
+                    </p>
+                  </div>
+                </div>
+                <div className="pt-2 flex items-center justify-between gap-3 border-t border-amber-500/20">
+                  <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">
+                    Order Status: In Progress
+                  </span>
+                  <Link
+                    to="/profile?tab=orders"
+                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-gradient-to-r from-amber-500 to-amber-600 shadow-sm active:scale-95 transition-all"
+                  >
+                    Track Order
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {isAuthenticated && !myReview && !canReview && eligibilityReason !== "not_delivered" && (
+              <div
+                className="rounded-2xl p-5 border flex items-start gap-3.5"
+                style={{
+                  backgroundColor: "var(--surface-bg)",
+                  borderColor: "var(--border-color)",
+                }}
+              >
+                <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-600 shrink-0 mt-0.5">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>
+                    Verified Purchasers Only
+                  </h4>
+                  <p className="text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
+                    To ensure authentic ratings, only customers who have purchased and received this product can submit a review. Once your order is delivered, you can share your feedback here.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {showForm && (
               <form onSubmit={handleSubmit} className="rounded-2xl p-6 space-y-4" style={{ backgroundColor: "var(--surface-bg)", border: "1px solid var(--border-color)" }}>
-                <h3 className="font-semibold" style={{ color: "var(--text-primary)" }}>{myReview ? "Edit your review" : "Write a review"}</h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold" style={{ color: "var(--text-primary)" }}>{myReview ? "Edit your review" : "Write a review"}</h3>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
+                    <CheckCircle2 className="w-3 h-3" /> Verified Buyer
+                  </span>
+                </div>
                 <div>
                   <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>Your rating</label>
                   <Stars value={rating} size={24} onSelect={setRating} />
