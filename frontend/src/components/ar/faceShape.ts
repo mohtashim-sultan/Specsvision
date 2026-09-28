@@ -108,18 +108,18 @@ export function extractAnthropometricRatios(pts: Record<LandmarkKey, Pt>): Detai
     faceLength = dist(pts.foreheadTop, pts.chin);
   }
 
-  // Cheekbone / Face Width
+  // Cheekbone / True Face Width (Bizygomatic breadth)
   const zygomaWidth = dist(pts.zygomaL, pts.zygomaR);
   const tragusWidth = dist(pts.cheekL, pts.cheekR);
-  // Cheek prominence is either at zygoma or slightly wider at ear base
-  const faceWidth = Math.max(zygomaWidth, tragusWidth * 0.96);
+  // True bizygomatic breadth across cheeks: zygomatic arch is ~1.08x the anterior bone prominence
+  const faceWidth = Math.max(zygomaWidth * 1.08, tragusWidth * 0.89);
 
   if (faceLength <= 1e-5 || faceWidth <= 1e-5) return null;
 
   // Forehead Width (Temple ridges or brows fallback)
   const templeWidth = dist(pts.templeL, pts.templeR);
   const browWidth = dist(pts.browL, pts.browR);
-  const foreheadWidth = Math.max(templeWidth, browWidth * 1.04);
+  const foreheadWidth = Math.max(templeWidth * 1.20, browWidth * 0.88);
 
   // Jaw Width (Gonial angles)
   const jawAngleWidth = dist(pts.jawAngleL, pts.jawAngleR);
@@ -136,12 +136,12 @@ export function extractAnthropometricRatios(pts: Record<LandmarkKey, Pt>): Detai
   let jRatio = jawAngleWidth / faceWidth;
 
   // If beard detected and jaw width is unusually flared by side hair, normalize
-  if (isBeardDetected && jRatio > 0.88) {
-    jRatio = THREE_CLAMP(jRatio * 0.94, 0.72, 0.85);
+  if (isBeardDetected && jRatio > 0.86) {
+    jRatio = THREE_CLAMP(jRatio * 0.94, 0.72, 0.82);
   }
 
-  const chinTaper = jawAngleWidth > 1e-5 ? chinTipWidth / jawAngleWidth : 0.42;
-  const jawCurvature = faceWidth > 1e-5 ? jawMidWidth / faceWidth : 0.78;
+  const chinTaper = jawAngleWidth > 1e-5 ? chinTipWidth / jawAngleWidth : 0.22;
+  const jawCurvature = faceWidth > 1e-5 ? jawMidWidth / faceWidth : 0.90;
 
   return {
     lw,
@@ -166,6 +166,7 @@ type Archetype = {
     fRatio: number;
     jRatio: number;
     chinTaper: number;
+    fjDelta: number;
     jawCurvature: number;
   };
   weight: {
@@ -173,70 +174,34 @@ type Archetype = {
     fRatio: number;
     jRatio: number;
     chinTaper: number;
-    jawCurvature: number;
+    fjDelta: number;
   };
 };
 
 const ARCHETYPES: Record<FaceShape, Archetype> = {
   Oval: {
-    mean: {
-      lw: 1.25,
-      fRatio: 0.92,
-      jRatio: 0.74,
-      chinTaper: 0.42,
-      jawCurvature: 0.77,
-    },
-    weight: { lw: 2.8, fRatio: 2.0, jRatio: 2.2, chinTaper: 1.8, jawCurvature: 1.5 },
+    mean: { lw: 1.28, fRatio: 0.90, jRatio: 0.80, chinTaper: 0.23, fjDelta: 0.10, jawCurvature: 0.89 },
+    weight: { lw: 3.8, fRatio: 2.8, jRatio: 3.2, chinTaper: 2.5, fjDelta: 3.5 },
   },
   Round: {
-    mean: {
-      lw: 1.08,
-      fRatio: 0.91,
-      jRatio: 0.76,
-      chinTaper: 0.46,
-      jawCurvature: 0.82,
-    },
-    weight: { lw: 3.5, fRatio: 1.8, jRatio: 2.4, chinTaper: 2.0, jawCurvature: 2.5 },
+    mean: { lw: 1.10, fRatio: 0.91, jRatio: 0.81, chinTaper: 0.27, fjDelta: 0.10, jawCurvature: 0.91 },
+    weight: { lw: 4.8, fRatio: 2.2, jRatio: 2.8, chinTaper: 2.5, fjDelta: 2.8 },
   },
   Square: {
-    mean: {
-      lw: 1.12,
-      fRatio: 0.95,
-      jRatio: 0.84,
-      chinTaper: 0.54,
-      jawCurvature: 0.86,
-    },
-    weight: { lw: 3.2, fRatio: 2.0, jRatio: 3.5, chinTaper: 2.8, jawCurvature: 2.8 },
+    mean: { lw: 1.14, fRatio: 0.94, jRatio: 0.91, chinTaper: 0.32, fjDelta: 0.03, jawCurvature: 0.93 },
+    weight: { lw: 4.2, fRatio: 2.5, jRatio: 4.8, chinTaper: 3.2, fjDelta: 4.2 },
   },
   Heart: {
-    mean: {
-      lw: 1.22,
-      fRatio: 0.97,
-      jRatio: 0.70,
-      chinTaper: 0.32,
-      jawCurvature: 0.70,
-    },
-    weight: { lw: 2.2, fRatio: 3.2, jRatio: 3.0, chinTaper: 3.2, jawCurvature: 2.0 },
+    mean: { lw: 1.26, fRatio: 0.97, jRatio: 0.74, chinTaper: 0.18, fjDelta: 0.23, jawCurvature: 0.86 },
+    weight: { lw: 2.8, fRatio: 3.5, jRatio: 3.8, chinTaper: 3.0, fjDelta: 4.5 },
   },
   Diamond: {
-    mean: {
-      lw: 1.24,
-      fRatio: 0.86,
-      jRatio: 0.69,
-      chinTaper: 0.31,
-      jawCurvature: 0.69,
-    },
-    weight: { lw: 2.2, fRatio: 3.5, jRatio: 3.0, chinTaper: 3.2, jawCurvature: 2.2 },
+    mean: { lw: 1.28, fRatio: 0.81, jRatio: 0.73, chinTaper: 0.18, fjDelta: 0.08, jawCurvature: 0.85 },
+    weight: { lw: 2.8, fRatio: 4.8, jRatio: 3.8, chinTaper: 3.0, fjDelta: 2.8 },
   },
   Oblong: {
-    mean: {
-      lw: 1.38,
-      fRatio: 0.93,
-      jRatio: 0.77,
-      chinTaper: 0.44,
-      jawCurvature: 0.79,
-    },
-    weight: { lw: 4.2, fRatio: 1.8, jRatio: 2.0, chinTaper: 1.8, jawCurvature: 1.5 },
+    mean: { lw: 1.45, fRatio: 0.90, jRatio: 0.82, chinTaper: 0.25, fjDelta: 0.08, jawCurvature: 0.88 },
+    weight: { lw: 5.8, fRatio: 2.0, jRatio: 2.5, chinTaper: 2.0, fjDelta: 2.8 },
   },
 };
 
@@ -245,6 +210,7 @@ const ARCHETYPES: Record<FaceShape, Archetype> = {
  */
 export function classifyDetailed(r: DetailedRatios): FaceShapeResult {
   const shapes: FaceShape[] = ["Oval", "Round", "Square", "Heart", "Diamond", "Oblong"];
+  const fjDelta = r.fRatio - r.jRatio;
   const rawScores: Record<FaceShape, number> = {} as any;
   let totalScore = 0;
 
@@ -254,11 +220,11 @@ export function classifyDetailed(r: DetailedRatios): FaceShapeResult {
     const dF = (r.fRatio - arch.mean.fRatio) * arch.weight.fRatio;
     const dJ = (r.jRatio - arch.mean.jRatio) * arch.weight.jRatio;
     const dChin = (r.chinTaper - arch.mean.chinTaper) * arch.weight.chinTaper;
-    const dCurve = (r.jawCurvature - arch.mean.jawCurvature) * arch.weight.jawCurvature;
+    const dDelta = (fjDelta - arch.mean.fjDelta) * arch.weight.fjDelta;
 
-    const sqDist = dLw * dLw + dF * dF + dJ * dJ + dChin * dChin + dCurve * dCurve;
-    // Gaussian likelihood
-    const score = Math.exp(-0.5 * sqDist);
+    const sqDist = dLw * dLw + dF * dF + dJ * dJ + dChin * dChin + dDelta * dDelta;
+    // Gaussian likelihood with sharp discrimination
+    const score = Math.exp(-0.8 * sqDist);
     rawScores[s] = score;
     totalScore += score;
   }
@@ -283,12 +249,12 @@ export function classifyDetailed(r: DetailedRatios): FaceShapeResult {
   const dF = (r.fRatio - arch.mean.fRatio) * arch.weight.fRatio;
   const dJ = (r.jRatio - arch.mean.jRatio) * arch.weight.jRatio;
   const dChin = (r.chinTaper - arch.mean.chinTaper) * arch.weight.chinTaper;
-  const dCurve = (r.jawCurvature - arch.mean.jawCurvature) * arch.weight.jawCurvature;
-  const dist = Math.sqrt(dLw * dLw + dF * dF + dJ * dJ + dChin * dChin + dCurve * dCurve);
+  const dDelta = (fjDelta - arch.mean.fjDelta) * arch.weight.fjDelta;
+  const distVal = Math.sqrt(dLw * dLw + dF * dF + dJ * dJ + dChin * dChin + dDelta * dDelta);
 
   // Map Euclidean deviation to realistic 82% - 98% likeness score
-  const confidence = Math.min(98, Math.max(80, Math.round(98 - dist * 12)));
-  const secondary = sorted[1] && sorted[1].score > 25 ? sorted[1].shape : undefined;
+  const confidence = Math.min(98, Math.max(80, Math.round(98 - distVal * 12)));
+  const secondary = sorted[1] && sorted[1].score > 20 ? sorted[1].shape : undefined;
 
   return {
     shape: primary,
@@ -457,8 +423,8 @@ export const SHAPE_GUIDE: Record<FaceShape, ShapeGuide> = {
     features: "Even proportions, softly rounded jawline, balanced forehead and cheekbones.",
   },
   Round: {
-    recommend: ["Rectangle", "Wayfarer", "Square", "Cat-Eye"],
-    blurb: "Soft, curved features with equal width and length. Angular and rectangular frames add flattering structure.",
+    recommend: ["Rectangle", "Square", "Wayfarer", "Cat-Eye"],
+    blurb: "Soft, curved features with equal width and length. Angular and rectangular frames add flattering structure and definition.",
     features: "Fuller cheeks, softly rounded chin, equal face length and width.",
   },
   Square: {
@@ -467,29 +433,71 @@ export const SHAPE_GUIDE: Record<FaceShape, ShapeGuide> = {
     features: "Prominent angular jaw, broad forehead, equal width at forehead and jaw.",
   },
   Heart: {
-    recommend: ["Aviator", "Round", "Cat-Eye", "Rimless"],
-    blurb: "Broader forehead that gently tapers to a pointed chin. Frames with wider lower silhouettes balance your look.",
+    recommend: ["Aviator", "Oval", "Round", "Cat-Eye"],
+    blurb: "Broader forehead that gently tapers to a pointed chin. Frames with wider lower silhouettes or soft curves balance your look.",
     features: "Broad forehead/temples, high cheekbones, delicate tapered chin.",
   },
   Diamond: {
-    recommend: ["Cat-Eye", "Oval", "Round", "Rimless"],
+    recommend: ["Cat-Eye", "Oval", "Round", "Wayfarer"],
     blurb: "Striking cheekbones with narrower forehead and jawline. Oval and Cat-Eye frames accent your eyes and soften cheekbones.",
     features: "High dramatic cheekbones, narrow forehead, pointed chin.",
   },
   Oblong: {
-    recommend: ["Round", "Square", "Aviator", "Wayfarer"],
+    recommend: ["Square", "Wayfarer", "Aviator", "Round"],
     blurb: "Gracefully elongated face structure. Taller and deeper frames create balanced horizontal symmetry.",
     features: "Long face aspect, straight cheekline, equal forehead and jaw width.",
   },
 };
 
-function normalizeCategory(c: string): string {
+export function normalizeCategory(c: string): string {
   return c.toLowerCase().replace(/[^a-z]/g, "");
 }
 
 export function isBestFit(category: string | null | undefined, shape: FaceShape | null): boolean {
-  if (!category || !shape) return false;
+  if (!category || !shape || !SHAPE_GUIDE[shape]) return false;
   const target = normalizeCategory(category);
   return SHAPE_GUIDE[shape].recommend.some((r) => normalizeCategory(r) === target);
 }
+
+/**
+ * Returns prioritized, diverse recommended products tailored for the specified face shape.
+ * Interleaves top items from each complementary category so users see a rich selection
+ * of distinct, flattering frame styles rather than repetitively listing the same starting items.
+ */
+export function getRecommendedProducts<T extends { category?: string | null; lexicon_highlights?: { sentiment_score?: number | null } | null }>(
+  products: T[],
+  shape: FaceShape | null
+): T[] {
+  if (!shape || !SHAPE_GUIDE[shape]) return [];
+  const recCats = SHAPE_GUIDE[shape].recommend;
+
+  // Group products by recommended category
+  const catBuckets = new Map<string, T[]>();
+  for (const cat of recCats) {
+    const norm = normalizeCategory(cat);
+    const inCat = products.filter((p) => p.category && normalizeCategory(p.category) === norm);
+    // Sort within bucket by sentiment score if available
+    inCat.sort((a, b) => {
+      const scoreA = a.lexicon_highlights?.sentiment_score ?? -Infinity;
+      const scoreB = b.lexicon_highlights?.sentiment_score ?? -Infinity;
+      return scoreB - scoreA;
+    });
+    catBuckets.set(norm, inCat);
+  }
+
+  // Interleave so top recommended frame from each category appears in priority order
+  const result: T[] = [];
+  const maxPerCat = Math.max(0, ...Array.from(catBuckets.values()).map((b) => b.length));
+  for (let i = 0; i < maxPerCat; i++) {
+    for (const cat of recCats) {
+      const norm = normalizeCategory(cat);
+      const bucket = catBuckets.get(norm);
+      if (bucket && bucket[i]) {
+        result.push(bucket[i]);
+      }
+    }
+  }
+  return result;
+}
+
 

@@ -13,6 +13,7 @@ import { displayImageUrl } from "../utils/storefrontProduct";
 import {
   isBestFit,
   SHAPE_GUIDE,
+  getRecommendedProducts,
   type FaceShape,
   type FaceShapeResult,
 } from "../components/ar/faceShape";
@@ -178,46 +179,42 @@ export default function VirtualTryOnPage() {
     setAdjustments(getInitialAdjustments());
   }, [selectedId, selected]);
 
-  // Extract unique categories from products
+  // Extract unique categories from products, adding "✨ Recommended" if face shape is detected
   const categories = useMemo(() => {
     const set = new Set<string>();
     products.forEach((p) => {
       if (p.category) set.add(p.category);
     });
-    return ["All", ...Array.from(set)];
-  }, [products]);
+    const list = ["All"];
+    if (detectedShape) {
+      list.push("✨ Recommended");
+    }
+    return [...list, ...Array.from(set)];
+  }, [products, detectedShape]);
 
-  // Filter products by selected category (studio catalog remains stable and unaffected by face shape detection)
+  // Extract prioritized, diverse recommended frames for the detected face shape.
+  // Interleaves top frames from each complementary category so users see rich, distinct styles.
+  const shapeRecommendedProducts = useMemo(() => {
+    if (!detectedShape) return [];
+    return getRecommendedProducts(products, detectedShape);
+  }, [products, detectedShape]);
+
+  // Filter products by selected category (supports "✨ Recommended" tab)
   const filteredProducts = useMemo(() => {
+    if (selectedCategory === "✨ Recommended") {
+      return detectedShape && shapeRecommendedProducts.length > 0 ? shapeRecommendedProducts : products;
+    }
     return selectedCategory === "All"
       ? products
       : products.filter((p) => p.category?.toLowerCase() === selectedCategory.toLowerCase());
-  }, [products, selectedCategory]);
+  }, [products, selectedCategory, detectedShape, shapeRecommendedProducts]);
 
-  // Extract top 3 recommended frames for the detected face shape.
-  // If any matching product carries lexicon review data (sentiment_score), rank all
-  // candidates by that score so the best-reviewed frames surface first.
-  // If no products have lexicon data (reviews absent / too few), preserve the default
-  // catalogue order — i.e. normal flow — and just slice the first three.
-  const shapeRecommendedProducts = useMemo(() => {
-    if (!detectedShape) return [];
-    const matching = products.filter((p) => isBestFit(p.category, detectedShape));
-    const hasLexiconData = matching.some(
-      (p) => p.lexicon_highlights != null && typeof p.lexicon_highlights.sentiment_score === "number",
-    );
-    if (hasLexiconData) {
-      // Lexicon-aware ranking: products with sentiment data sort first (desc), the
-      // rest keep their relative order at the bottom (score treated as -Infinity).
-      const sorted = [...matching].sort((a, b) => {
-        const scoreA = a.lexicon_highlights?.sentiment_score ?? -Infinity;
-        const scoreB = b.lexicon_highlights?.sentiment_score ?? -Infinity;
-        return scoreB - scoreA;
-      });
-      return sorted.slice(0, 3);
+  // If detectedShape becomes null while on "✨ Recommended", revert back to "All"
+  useEffect(() => {
+    if (!detectedShape && selectedCategory === "✨ Recommended") {
+      setSelectedCategory("All");
     }
-    // Normal flow: no review data — return first three in catalogue order.
-    return matching.slice(0, 3);
-  }, [products, detectedShape]);
+  }, [detectedShape, selectedCategory]);
 
   const frameSrc = useMemo(() => {
     if (selected?.front_view?.trim()) {
@@ -279,13 +276,21 @@ export default function VirtualTryOnPage() {
     if (e.state === "completed" && e.result) {
       setShapeResult(e.result);
       setDetectedShape(e.result.shape);
+      const recs = getRecommendedProducts(products, e.result.shape);
+      if (recs.length > 0) {
+        setSelectedCategory("✨ Recommended");
+        const currentIsMatch = isBestFit(selected?.category, e.result.shape);
+        if (!currentIsMatch && recs[0]) {
+          handleSelect(recs[0].id);
+        }
+      }
       setTimeout(() => {
         setShowScanOverlay(false);
         setShowResultModal(true);
         toast.success(`Identified: ${e.result?.shape} Face Shape ✨`);
       }, 700);
     }
-  }, []);
+  }, [products, selected, handleSelect]);
 
   const handleManualSelectShape = useCallback((shape: FaceShape) => {
     if (viewerRef.current) {
@@ -295,10 +300,18 @@ export default function VirtualTryOnPage() {
     } else {
       setDetectedShape(shape);
     }
+    const recs = getRecommendedProducts(products, shape);
+    if (recs.length > 0) {
+      setSelectedCategory("✨ Recommended");
+      const currentIsMatch = isBestFit(selected?.category, shape);
+      if (!currentIsMatch && recs[0]) {
+        handleSelect(recs[0].id);
+      }
+    }
     setShowManualShapeModal(false);
     setShowResultModal(true);
     toast.success(`Face shape set to ${shape}!`);
-  }, []);
+  }, [products, selected, handleSelect]);
 
   // ── Multi-face auto-cycle ──────────────────────────────────────────────────
   // When the scanner blocks because multiple faces are in view, automatically
@@ -1400,10 +1413,15 @@ export default function VirtualTryOnPage() {
                     <img src={displayImageUrl(p)} alt={p.name} className="h-full w-full object-cover" />
                   </div>
 
-                  <div className="min-w-0 flex-1">
+                    <div className="min-w-0 flex-1">
                     <p className={`truncate text-xs font-bold leading-tight ${active ? "text-purple-900 dark:text-white" : "text-slate-900 dark:text-slate-200 group-hover:text-purple-600 dark:group-hover:text-white transition-colors"}`}>{p.name}</p>
                     <div className="mt-0.5 flex items-center gap-1.5">
                       <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{p.category ?? "Frame"}</p>
+                      {detectedShape && isBestFit(p.category, detectedShape) && (
+                        <span className="rounded-full bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30 px-1.5 py-0.2 text-[8px] font-bold">
+                          ✨ Match
+                        </span>
+                      )}
                     </div>
                     <p className={`mt-0.5 text-xs font-bold ${active ? "text-purple-700 dark:text-purple-300" : "text-purple-600 dark:text-slate-400"}`}>{formatPrice(p.price)}</p>
                   </div>
@@ -1494,6 +1512,11 @@ export default function VirtualTryOnPage() {
                   >
                     <div className="relative aspect-square w-full overflow-hidden rounded-md bg-slate-900 border border-purple-100 dark:border-slate-800/80">
                       <img src={displayImageUrl(p)} alt={p.name} className="h-full w-full object-cover" />
+                      {detectedShape && isBestFit(p.category, detectedShape) && (
+                        <span className="absolute left-0.5 top-0.5 rounded-full bg-purple-600/90 text-white px-1 py-0.2 text-[6.5px] font-bold shadow-sm">
+                          ✨
+                        </span>
+                      )}
                       {active && (
                         <span className="absolute right-0.5 top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-purple-500 shadow-sm">
                           <MaterialIcon name="check" className="!text-[7px] text-white" />
@@ -1572,8 +1595,8 @@ export default function VirtualTryOnPage() {
               {shapeRecommendedProducts.length === 0 ? (
                 <p className="text-xs text-slate-500 py-3 text-center">No specific frames found matching this shape.</p>
               ) : (
-                <div className="grid grid-cols-3 gap-2">
-                  {shapeRecommendedProducts.map((p) => {
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {shapeRecommendedProducts.slice(0, 6).map((p) => {
                     const isSelected = p.id === selectedId;
                     return (
                       <button
@@ -1590,8 +1613,11 @@ export default function VirtualTryOnPage() {
                             : "border-purple-100 dark:border-slate-800 bg-purple-50/40 hover:bg-purple-100/60 dark:bg-slate-900/50 dark:hover:bg-slate-850"
                         }`}
                       >
-                        <div className="aspect-[4/3] w-full rounded-xl overflow-hidden bg-slate-900 mb-1.5 border border-purple-100 dark:border-slate-800">
+                        <div className="relative aspect-[4/3] w-full rounded-xl overflow-hidden bg-slate-900 mb-1.5 border border-purple-100 dark:border-slate-800">
                           <img src={displayImageUrl(p)} alt={p.name} className="h-full w-full object-cover group-hover:scale-105 transition-transform" />
+                          <span className="absolute top-1 left-1 rounded-md bg-slate-950/85 backdrop-blur-sm text-purple-300 border border-purple-500/30 px-1.5 py-0.5 text-[8px] font-bold">
+                            {p.category}
+                          </span>
                         </div>
                         <p className={`text-[10px] font-bold truncate leading-tight ${isSelected ? "text-purple-950 dark:text-white" : "text-slate-900 dark:text-slate-100"}`}>
                           {p.name}

@@ -348,6 +348,15 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
       };
     }, [scaleOffset, templeLength, faceStretch, cameraZoom, positionX, positionY, positionZ, rotationX, rotationY, rotationZ]);
 
+    const onScanProgressRef = useRef(onScanProgress);
+    onScanProgressRef.current = onScanProgress;
+    const onFaceShapeDetectRef = useRef(onFaceShapeDetect);
+    onFaceShapeDetectRef.current = onFaceShapeDetect;
+    const onFaceShapeResultRef = useRef(onFaceShapeResult);
+    onFaceShapeResultRef.current = onFaceShapeResult;
+    const onStatusChangeRef = useRef(onStatusChange);
+    onStatusChangeRef.current = onStatusChange;
+
     const [overlay, setOverlay] = useState<{ status: TryOnStatus; detail?: string }>({ status: "loading" });
 
     // ── Status reporting ───────────────────────────────────────────────────────
@@ -357,9 +366,9 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
         if (reportedStatusRef.current === next && next !== "loading") return;
         reportedStatusRef.current = next;
         setOverlay({ status: next, detail });
-        onStatusChange?.(next, detail);
+        onStatusChangeRef.current?.(next, detail);
       },
-      [onStatusChange],
+      [],
     );
 
     // ── Load / swap glasses model ──────────────────────────────────────────────
@@ -740,7 +749,7 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
         if (glassesRef.current) {
           glassesRef.current.visible = false;
         }
-        onScanProgress?.({
+        onScanProgressRef.current?.({
           state: "aligning",
           progress: 0,
           message: "Center your face in the oval and look straight ahead",
@@ -753,7 +762,7 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
         if (glassesRef.current && wasTrackingRef.current) {
           glassesRef.current.visible = true;
         }
-        onScanProgress?.({
+        onScanProgressRef.current?.({
           state: "idle",
           progress: 0,
           message: "",
@@ -770,8 +779,8 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
         const res = shapeStabilizerRef.current.lockShape(shape);
         lastShapeRef.current = shape;
         lastResultRef.current = res;
-        onFaceShapeDetect?.(shape);
-        onFaceShapeResult?.(res);
+        onFaceShapeDetectRef.current?.(shape);
+        onFaceShapeResultRef.current?.(res);
         return res;
       },
     }));
@@ -1253,6 +1262,28 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
             if (!sa) return null;
             if (frontality < AR.SHAPE_MIN_FRONTALITY) return null;
 
+            // Direct 3D metric landmarks from MediaPipe estimate (rotation & tilt invariant)
+            const est =
+              mindarInstance?.getLatestEstimate?.() ??
+              (mindarInstance?.controller as any)?.lastEstimateResult;
+            if (est?.metricLandmarks) {
+              const pts: Record<string, { x: number; y: number; z: number }> = {};
+              let allFound = true;
+              for (const [key, idx] of Object.entries(FACE_SHAPE_LANDMARKS)) {
+                const ml = est.metricLandmarks[idx];
+                if (ml && Number.isFinite(ml[0]) && Number.isFinite(ml[1]) && Number.isFinite(ml[2])) {
+                  pts[key] = { x: ml[0], y: ml[1], z: ml[2] };
+                } else {
+                  allFound = false;
+                  break;
+                }
+              }
+              if (allFound) {
+                return extractAnthropometricRatios(pts as any);
+              }
+            }
+
+            // Fallback to world-space anchors if raw metric landmarks unavailable
             const pts: Record<string, { x: number; y: number; z: number }> = {};
             for (const key of Object.keys(FACE_SHAPE_LANDMARKS)) {
               const g = sa[key]?.group;
@@ -1366,7 +1397,7 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                 if (detectedFaceCountRef.current >= 2) {
                   scanAlignFramesRef.current = 0;
                   scanSamplesRef.current = [];
-                  onScanProgress?.({
+                  onScanProgressRef.current?.({
                     state: "aligning",
                     progress: 0,
                     message: "Multiple faces detected — please keep only one face in view",
@@ -1395,14 +1426,14 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                     else if (isTooClose) alignMsg = "Move back slightly from the circle";
                     else if (isOffCenterHoriz || isOffCenterVert) alignMsg = "Center your face inside the circle";
 
-                    onScanProgress?.({
+                    onScanProgressRef.current?.({
                       state: "aligning",
                       progress: Math.min(100, Math.round((scanSamplesRef.current.length / 25) * 100)),
                       message: alignMsg,
                     });
                   } else if (frontality < 0.92) {
                     scanAlignFramesRef.current = 0;
-                    onScanProgress?.({
+                    onScanProgressRef.current?.({
                       state: "aligning",
                       progress: Math.min(100, Math.round((scanSamplesRef.current.length / 25) * 100)),
                       message: "Please look straight ahead at the camera",
@@ -1415,7 +1446,7 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                       if (sample) {
                         scanSamplesRef.current.push(sample);
                         const pct = Math.min(100, Math.round((scanSamplesRef.current.length / 25) * 100));
-                        onScanProgress?.({
+                        onScanProgressRef.current?.({
                           state: "scanning",
                           progress: pct,
                           message: pct < 100 ? `Analyzing 3D facial proportions… ${pct}%` : "Calculating best match…",
@@ -1427,9 +1458,9 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
                           if (res) {
                             lastShapeRef.current = res.shape;
                             lastResultRef.current = res;
-                            onFaceShapeDetect?.(res.shape);
-                            onFaceShapeResult?.(res);
-                            onScanProgress?.({
+                            onFaceShapeDetectRef.current?.(res.shape);
+                            onFaceShapeResultRef.current?.(res);
+                            onScanProgressRef.current?.({
                               state: "completed",
                               progress: 100,
                               message: "Face shape identified!",
@@ -1811,13 +1842,13 @@ const TryOnViewer = forwardRef<TryOnViewerHandle, TryOnViewerProps>(
               if (lostFramesRef.current === AR.SHAPE_RELEASE_FRAMES) {
                 shapeStabilizerRef.current.reset();
                 lastShapeRef.current = null;
-                onFaceShapeDetect?.(null);
-                onFaceShapeResult?.(null);
+                onFaceShapeDetectRef.current?.(null);
+                onFaceShapeResultRef.current?.(null);
               }
               if (scanStateRef.current === "aligning" || scanStateRef.current === "scanning") {
                 scanAlignFramesRef.current = 0;
                 scanSamplesRef.current = [];
-                onScanProgress?.({
+                onScanProgressRef.current?.({
                   state: "aligning",
                   progress: 0,
                   message: "No face in circle — please position your face in the circle",
